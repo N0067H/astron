@@ -1,9 +1,17 @@
-struct Token {
-    kind: TokenKind,
-    line: usize,
+#[derive(Debug)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub line: usize,
 }
 
-enum TokenKind {                                                                                                                       
+impl Token {
+    pub fn new(kind: TokenKind, line: usize) -> Self {
+        Token { kind, line }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TokenKind {
     // Keywords
     Launch, Ignite, Payload, Fuel, Stage, Fire,
     Scan, Fallback, Route, Orbit, Spin, Burn,
@@ -11,20 +19,28 @@ enum TokenKind {
 
     // Types
     Int, Float, Str, Flag, Byte, Void, Air,
-                
+
     // Literals
     IntLit(i64),
     FloatLit(f64),
     StrLit(String),
+    BoolLit(bool),
     Ident(String),
 
-    // Operators
+    // Arithmetic operators
     Plus, Minus, Star, Slash, Percent,
+
+    // Comparison operators
     Eq, NotEq, Lt, Gt, LtEq, GtEq,
-    Assign, PlusAssign, MinusAssign,
+
+    // Assignment operators
+    Assign, PlusAssign, MinusAssign, MulAssign, DivAssign, ModAssign,
+
+    // Logical operators
     And, Or, Not,
-    DotDot, DotDotEq,
-    FatArrow,
+
+    // Range & arrow
+    DotDot, DotDotEq, FatArrow,
 
     // Separators
     LBrace, RBrace, LParen, RParen, LBracket, RBracket,
