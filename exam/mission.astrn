@@ -1,0 +1,104 @@
+ignite {
+    // mission systems initialized
+}
+
+stage is_velocity_safe(v: float) lands flag {
+    land v > 0.0 and v < 7.9
+}
+
+stage fuel_required(mass: int, distance: int) lands float {
+    payload efficiency: float = 0.85
+    land mass * distance * efficiency
+}
+
+stage describe_phase(phase: int) lands void {
+    route phase {
+        1 => fire log("launch phase")
+        2 => fire log("orbit phase")
+        3 => fire log("landing phase")
+    }
+}
+
+stage run_checks(systems: [str], count: int) lands flag {
+    fuel all_clear: flag = true
+
+    spin i in 0..count {
+        scan systems[i] == "failed" {
+            all_clear = false
+            pass
+        }
+    }
+
+    land all_clear
+}
+
+launch main {
+    payload mission: str = "Artemis-1"
+    payload target_orbit: int = 400
+    payload total_systems: int = 4
+    payload checksum: byte = 0xFF
+
+    fuel systems: [str] = ["engine", "nav", "comms", "life-support"]
+    fuel altitude: int = 0
+    fuel velocity: float = 0.0
+    fuel fuel_level: float = 100.0
+    fuel laps: int = 0
+    fuel phase: int = 1
+    fuel last_warning: str = air
+
+    // pre-launch check
+    fuel ready: flag = fire run_checks(systems, total_systems)
+    scan ready {
+        fire log("all systems go")
+    } fallback {
+        abort
+    }
+
+    // launch phase
+    fire describe_phase(phase)
+    burn altitude < target_orbit {
+        velocity += 0.5
+        altitude += 10
+        fuel_level -= 1.5
+
+        scan fuel_level <= 0.0 or altitude < 0 {
+            last_warning = "fuel depleted"
+            abort
+        }
+
+        scan not fire is_velocity_safe(velocity) {
+            velocity -= 0.1
+            pass
+        }
+    }
+
+    // orbit phase
+    phase = 2
+    fire describe_phase(phase)
+    orbit {
+        laps += 1
+        scan laps % 2 == 0 {
+            fire log("even lap")
+        }
+        scan laps >= 6 {
+            eject
+        }
+    }
+
+    // landing phase
+    phase = 3
+    fire describe_phase(phase)
+    spin i in 1..=5 {
+        velocity -= 1.0
+        altitude -= 50
+    }
+
+    burn velocity > 0.0 {
+        velocity -= 0.5
+        scan velocity != 0.0 and altitude <= 0 {
+            eject
+        }
+    }
+
+    land 0
+}
