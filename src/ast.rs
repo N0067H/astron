@@ -69,6 +69,9 @@ pub enum ExprKind {
         index: Box<Expr>,
     },
 
+    // [a, b, c]
+    ArrayLit(Vec<Expr>),
+
     // start..end  or  start..=end
     Range {
         start: Box<Expr>,
