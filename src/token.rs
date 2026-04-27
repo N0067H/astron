@@ -2,11 +2,12 @@
 pub struct Token {
     pub kind: TokenKind,
     pub line: usize,
+    pub col: usize,
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, line: usize) -> Self {
-        Token { kind, line }
+    pub fn new(kind: TokenKind, line: usize, col: usize) -> Self {
+        Token { kind, line, col }
     }
 }
 

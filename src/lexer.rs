@@ -4,6 +4,7 @@ struct Lexer {
     source: Vec<char>,
     pos: usize,
     line: usize,
+    col: usize,
 }
 
 impl Lexer {
@@ -16,6 +17,7 @@ impl Lexer {
             source: chars,
             pos: 0,
             line: 1,
+            col: 1,
         }
     }
 
@@ -30,26 +32,30 @@ impl Lexer {
     fn advance(&mut self) -> char {
         let c = self.source[self.pos];
         self.pos += 1;
+        if c == '\n' {
+            self.line += 1;
+            self.col = 1;
+        } else {
+            self.col += 1;
+        }
         c
     }
 
     fn skip_whitespace(&mut self) {
         while self.peek().is_whitespace() {
-            if self.peek() == '\n' {
-                self.line += 1;
-            }
-            self.pos += 1;
+            self.advance();
         }
     }
 
     fn skip_comment(&mut self) {
         while self.peek() != '\n' && self.peek() != '\0' {
-            self.pos += 1;
+            self.advance();
         }
     }
 
     fn lex_number(&mut self) -> Token {
         let line = self.line;
+        let col = self.col;
         let start = self.pos;
 
         if self.peek() == '0' && (self.peek_next() == 'x' || self.peek_next() == 'X') {
@@ -60,7 +66,7 @@ impl Lexer {
             }
             let s: String = self.source[start..self.pos].iter().collect();
             let n = i64::from_str_radix(&s[2..], 16).expect("invalid hex literal");
-            return Token::new(TokenKind::IntLit(n), line);
+            return Token::new(TokenKind::IntLit(n), line, col);
         }
 
         while self.peek().is_ascii_digit() {
@@ -68,28 +74,29 @@ impl Lexer {
         }
 
         if self.peek() == '.' && self.peek_next().is_ascii_digit() {
-            self.advance(); // '.'
+            self.advance();
             while self.peek().is_ascii_digit() {
                 self.advance();
             }
             let s: String = self.source[start..self.pos].iter().collect();
             let f: f64 = s.parse().expect("invalid float literal");
-            return Token::new(TokenKind::FloatLit(f), line);
+            return Token::new(TokenKind::FloatLit(f), line, col);
         }
 
         let s: String = self.source[start..self.pos].iter().collect();
         let n: i64 = s.parse().expect("invalid int literal");
-        Token::new(TokenKind::IntLit(n), line)
+        Token::new(TokenKind::IntLit(n), line, col)
     }
 
     fn lex_string(&mut self) -> Token {
         let line = self.line;
-        self.advance(); // 여는 '"' 소비
+        let col = self.col;
+        self.advance(); // opening '"'
         let mut s = String::new();
 
         while self.peek() != '"' && self.peek() != '\0' {
             if self.peek() == '\\' {
-                self.advance(); // '\\' 소비
+                self.advance();
                 let escaped = match self.advance() {
                     'n' => '\n',
                     't' => '\t',
@@ -99,19 +106,17 @@ impl Lexer {
                 };
                 s.push(escaped);
             } else {
-                if self.peek() == '\n' {
-                    self.line += 1;
-                }
                 s.push(self.advance());
             }
         }
 
-        self.advance();
-        Token::new(TokenKind::StrLit(s), line)
+        self.advance(); // closing '"'
+        Token::new(TokenKind::StrLit(s), line, col)
     }
 
     fn lex_ident_or_keyword(&mut self) -> Token {
         let line = self.line;
+        let col = self.col;
         let start = self.pos;
 
         while self.peek().is_alphanumeric() || self.peek() == '_' {
@@ -154,7 +159,7 @@ impl Lexer {
             _ => TokenKind::Ident(word),
         };
 
-        Token::new(kind, line)
+        Token::new(kind, line, col)
     }
 
     fn next_token(&mut self) -> Token {
@@ -168,10 +173,11 @@ impl Lexer {
         }
 
         let line = self.line;
+        let col = self.col;
         let c = self.peek();
 
         if c == '\0' {
-            return Token::new(TokenKind::Eof, line);
+            return Token::new(TokenKind::Eof, line, col);
         }
 
         if c.is_ascii_digit() {
@@ -240,7 +246,7 @@ impl Lexer {
                     self.advance();
                     TokenKind::NotEq
                 }
-                _ => panic!("line {}: '!' must be followed by '='", line),
+                _ => panic!("line {}:{}: '!' must be followed by '='", line, col),
             },
             '<' => match self.peek() {
                 '=' => {
@@ -267,7 +273,7 @@ impl Lexer {
                         _ => TokenKind::DotDot,
                     }
                 }
-                _ => panic!("line {}: unexpected '.'", line),
+                _ => panic!("line {}:{}: unexpected '.'", line, col),
             },
             '{' => TokenKind::LBrace,
             '}' => TokenKind::RBrace,
@@ -277,10 +283,10 @@ impl Lexer {
             ']' => TokenKind::RBracket,
             ',' => TokenKind::Comma,
             ':' => TokenKind::Colon,
-            _ => panic!("line {}: unexpected character '{}'", line, c),
+            _ => panic!("line {}:{}: unexpected character '{}'", line, col, c),
         };
 
-        Token::new(kind, line)
+        Token::new(kind, line, col)
     }
 }
 

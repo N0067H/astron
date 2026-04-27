@@ -1,3 +1,4 @@
+mod ast;
 mod lexer;
 pub mod token;
 
@@ -17,6 +18,6 @@ fn main() {
             TokenKind::BoolLit(b) => format!("BoolLit({b})"),
             other => format!("{other:?}"),
         };
-        println!("line {:>3} | {label}", tok.line);
+        println!("line {:>3}:{:<3} | {label}", tok.line, tok.col);
     }
 }
