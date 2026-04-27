@@ -1,5 +1,5 @@
-pub mod token;
 mod lexer;
+pub mod token;
 
 use std::fs;
 use token::TokenKind;
@@ -10,12 +10,12 @@ fn main() {
 
     for tok in &tokens {
         let label = match &tok.kind {
-            TokenKind::Ident(s)   => format!("Ident({s})"),
-            TokenKind::StrLit(s)  => format!("StrLit({s:?})"),
-            TokenKind::IntLit(n)  => format!("IntLit({n})"),
-            TokenKind::FloatLit(f)=> format!("FloatLit({f})"),
+            TokenKind::Ident(s) => format!("Ident({s})"),
+            TokenKind::StrLit(s) => format!("StrLit({s:?})"),
+            TokenKind::IntLit(n) => format!("IntLit({n})"),
+            TokenKind::FloatLit(f) => format!("FloatLit({f})"),
             TokenKind::BoolLit(b) => format!("BoolLit({b})"),
-            other                 => format!("{other:?}"),
+            other => format!("{other:?}"),
         };
         println!("line {:>3} | {label}", tok.line);
     }

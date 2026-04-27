@@ -9,10 +9,14 @@ struct Lexer {
 impl Lexer {
     fn new(source: &str) -> Self {
         let mut chars: Vec<char> = source.chars().collect();
-        // 두 개의 sentinel을 붙여 peek_next()가 항상 안전하게 읽히도록 함
         chars.push('\0');
         chars.push('\0');
-        Lexer { source: chars, pos: 0, line: 1 }
+
+        Lexer {
+            source: chars,
+            pos: 0,
+            line: 1,
+        }
     }
 
     fn peek(&self) -> char {
@@ -38,7 +42,6 @@ impl Lexer {
         }
     }
 
-    // '//' 이후 줄 끝까지 건너뜀 (개행 문자 자체는 소비하지 않음)
     fn skip_comment(&mut self) {
         while self.peek() != '\n' && self.peek() != '\0' {
             self.pos += 1;
@@ -88,11 +91,11 @@ impl Lexer {
             if self.peek() == '\\' {
                 self.advance(); // '\\' 소비
                 let escaped = match self.advance() {
-                    'n'  => '\n',
-                    't'  => '\t',
-                    '"'  => '"',
+                    'n' => '\n',
+                    't' => '\t',
+                    '"' => '"',
                     '\\' => '\\',
-                    c    => c,
+                    c => c,
                 };
                 s.push(escaped);
             } else {
@@ -118,37 +121,37 @@ impl Lexer {
         let word: String = self.source[start..self.pos].iter().collect();
 
         let kind = match word.as_str() {
-            "launch"   => TokenKind::Launch,
-            "ignite"   => TokenKind::Ignite,
-            "payload"  => TokenKind::Payload,
-            "fuel"     => TokenKind::Fuel,
-            "stage"    => TokenKind::Stage,
-            "fire"     => TokenKind::Fire,
-            "lands"    => TokenKind::Lands,
-            "land"     => TokenKind::Land,
-            "scan"     => TokenKind::Scan,
+            "launch" => TokenKind::Launch,
+            "ignite" => TokenKind::Ignite,
+            "payload" => TokenKind::Payload,
+            "fuel" => TokenKind::Fuel,
+            "stage" => TokenKind::Stage,
+            "fire" => TokenKind::Fire,
+            "lands" => TokenKind::Lands,
+            "land" => TokenKind::Land,
+            "scan" => TokenKind::Scan,
             "fallback" => TokenKind::Fallback,
-            "route"    => TokenKind::Route,
-            "orbit"    => TokenKind::Orbit,
-            "spin"     => TokenKind::Spin,
-            "burn"     => TokenKind::Burn,
-            "eject"    => TokenKind::Eject,
-            "pass"     => TokenKind::Pass,
-            "abort"    => TokenKind::Abort,
-            "in"       => TokenKind::In,
-            "int"      => TokenKind::Int,
-            "float"    => TokenKind::Float,
-            "str"      => TokenKind::Str,
-            "flag"     => TokenKind::Flag,
-            "byte"     => TokenKind::Byte,
-            "void"     => TokenKind::Void,
-            "air"      => TokenKind::Air,
-            "and"      => TokenKind::And,
-            "or"       => TokenKind::Or,
-            "not"      => TokenKind::Not,
-            "true"     => TokenKind::BoolLit(true),
-            "false"    => TokenKind::BoolLit(false),
-            _          => TokenKind::Ident(word),
+            "route" => TokenKind::Route,
+            "orbit" => TokenKind::Orbit,
+            "spin" => TokenKind::Spin,
+            "burn" => TokenKind::Burn,
+            "eject" => TokenKind::Eject,
+            "pass" => TokenKind::Pass,
+            "abort" => TokenKind::Abort,
+            "in" => TokenKind::In,
+            "int" => TokenKind::Int,
+            "float" => TokenKind::Float,
+            "str" => TokenKind::Str,
+            "flag" => TokenKind::Flag,
+            "byte" => TokenKind::Byte,
+            "void" => TokenKind::Void,
+            "air" => TokenKind::Air,
+            "and" => TokenKind::And,
+            "or" => TokenKind::Or,
+            "not" => TokenKind::Not,
+            "true" => TokenKind::BoolLit(true),
+            "false" => TokenKind::BoolLit(false),
+            _ => TokenKind::Ident(word),
         };
 
         Token::new(kind, line)
@@ -187,48 +190,81 @@ impl Lexer {
 
         let kind = match c {
             '+' => match self.peek() {
-                '=' => { self.advance(); TokenKind::PlusAssign }
-                _   => TokenKind::Plus,
+                '=' => {
+                    self.advance();
+                    TokenKind::PlusAssign
+                }
+                _ => TokenKind::Plus,
             },
             '-' => match self.peek() {
-                '=' => { self.advance(); TokenKind::MinusAssign }
-                _   => TokenKind::Minus,
+                '=' => {
+                    self.advance();
+                    TokenKind::MinusAssign
+                }
+                _ => TokenKind::Minus,
             },
             '*' => match self.peek() {
-                '=' => { self.advance(); TokenKind::MulAssign }
-                _   => TokenKind::Star,
+                '=' => {
+                    self.advance();
+                    TokenKind::MulAssign
+                }
+                _ => TokenKind::Star,
             },
             '/' => match self.peek() {
-                '=' => { self.advance(); TokenKind::DivAssign }
-                _   => TokenKind::Slash,
+                '=' => {
+                    self.advance();
+                    TokenKind::DivAssign
+                }
+                _ => TokenKind::Slash,
             },
             '%' => match self.peek() {
-                '=' => { self.advance(); TokenKind::ModAssign }
-                _   => TokenKind::Percent,
+                '=' => {
+                    self.advance();
+                    TokenKind::ModAssign
+                }
+                _ => TokenKind::Percent,
             },
             '=' => match self.peek() {
-                '=' => { self.advance(); TokenKind::Eq }
-                '>' => { self.advance(); TokenKind::FatArrow }
-                _   => TokenKind::Assign,
+                '=' => {
+                    self.advance();
+                    TokenKind::Eq
+                }
+                '>' => {
+                    self.advance();
+                    TokenKind::FatArrow
+                }
+                _ => TokenKind::Assign,
             },
             '!' => match self.peek() {
-                '=' => { self.advance(); TokenKind::NotEq }
-                _   => panic!("line {}: '!' must be followed by '='", line),
+                '=' => {
+                    self.advance();
+                    TokenKind::NotEq
+                }
+                _ => panic!("line {}: '!' must be followed by '='", line),
             },
             '<' => match self.peek() {
-                '=' => { self.advance(); TokenKind::LtEq }
-                _   => TokenKind::Lt,
+                '=' => {
+                    self.advance();
+                    TokenKind::LtEq
+                }
+                _ => TokenKind::Lt,
             },
             '>' => match self.peek() {
-                '=' => { self.advance(); TokenKind::GtEq }
-                _   => TokenKind::Gt,
+                '=' => {
+                    self.advance();
+                    TokenKind::GtEq
+                }
+                _ => TokenKind::Gt,
             },
             '.' => match self.peek() {
                 '.' => {
                     self.advance();
                     match self.peek() {
-                        '=' => { self.advance(); TokenKind::DotDotEq }
-                        _   => TokenKind::DotDot,
+                        '=' => {
+                            self.advance();
+                            TokenKind::DotDotEq
+                        }
+                        _ => TokenKind::DotDot,
                     }
                 }
                 _ => panic!("line {}: unexpected '.'", line),
@@ -241,12 +277,11 @@ impl Lexer {
             ']' => TokenKind::RBracket,
             ',' => TokenKind::Comma,
             ':' => TokenKind::Colon,
-            _   => panic!("line {}: unexpected character '{}'", line, c),
+            _ => panic!("line {}: unexpected character '{}'", line, c),
         };
 
         Token::new(kind, line)
     }
-
 }
 
 pub fn tokenize(source: &str) -> Vec<Token> {

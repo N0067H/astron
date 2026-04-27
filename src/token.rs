@@ -13,12 +13,33 @@ impl Token {
 #[derive(Debug, PartialEq)]
 pub enum TokenKind {
     // Keywords
-    Launch, Ignite, Payload, Fuel, Stage, Fire,
-    Scan, Fallback, Route, Orbit, Spin, Burn,
-    Land, Lands, Eject, Pass, Abort, In,
+    Launch,
+    Ignite,
+    Payload,
+    Fuel,
+    Stage,
+    Fire,
+    Scan,
+    Fallback,
+    Route,
+    Orbit,
+    Spin,
+    Burn,
+    Land,
+    Lands,
+    Eject,
+    Pass,
+    Abort,
+    In,
 
     // Types
-    Int, Float, Str, Flag, Byte, Void, Air,
+    Int,
+    Float,
+    Str,
+    Flag,
+    Byte,
+    Void,
+    Air,
 
     // Literals
     IntLit(i64),
@@ -28,23 +49,47 @@ pub enum TokenKind {
     Ident(String),
 
     // Arithmetic operators
-    Plus, Minus, Star, Slash, Percent,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
 
     // Comparison operators
-    Eq, NotEq, Lt, Gt, LtEq, GtEq,
+    Eq,
+    NotEq,
+    Lt,
+    Gt,
+    LtEq,
+    GtEq,
 
     // Assignment operators
-    Assign, PlusAssign, MinusAssign, MulAssign, DivAssign, ModAssign,
+    Assign,
+    PlusAssign,
+    MinusAssign,
+    MulAssign,
+    DivAssign,
+    ModAssign,
 
     // Logical operators
-    And, Or, Not,
+    And,
+    Or,
+    Not,
 
     // Range & arrow
-    DotDot, DotDotEq, FatArrow,
+    DotDot,
+    DotDotEq,
+    FatArrow,
 
     // Separators
-    LBrace, RBrace, LParen, RParen, LBracket, RBracket,
-    Comma, Colon,
+    LBrace,
+    RBrace,
+    LParen,
+    RParen,
+    LBracket,
+    RBracket,
+    Comma,
+    Colon,
 
     Eof,
 }
