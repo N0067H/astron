@@ -1,0 +1,30 @@
+stage square(n: int) lands int {
+    land n * n
+}
+
+stage distance_2d(x: int, y: int) lands int {
+    land fire square(x) + fire square(y)
+}
+
+stage classify_distance(distance: int) lands str {
+    scan distance < 25 {
+        land "near"
+    } fallback {
+        scan distance < 100 {
+            land "medium"
+        } fallback {
+            land "far"
+        }
+    }
+}
+
+launch main {
+    payload x: int = 6
+    payload y: int = 8
+    fuel distance: int = fire distance_2d(x, y)
+    fuel label: str = fire classify_distance(distance)
+
+    fire log("distance squared", distance)
+    fire log("classification", label)
+    land 0
+}

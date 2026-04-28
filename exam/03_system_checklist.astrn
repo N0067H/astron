@@ -1,0 +1,29 @@
+stage count_failures(systems: [str], count: int) lands int {
+    fuel failed: int = 0
+
+    spin i in 0..count {
+        scan systems[i] == "failed" {
+            failed += 1
+            pass
+        }
+    }
+
+    land failed
+}
+
+stage print_status(failed: int) lands void {
+    scan failed == 0 {
+        fire log("all systems nominal")
+    } fallback {
+        fire log("systems needing attention", failed)
+    }
+}
+
+launch main {
+    fuel systems: [str] = ["ready", "ready", "failed", "ready", "failed"]
+    payload count: int = 5
+    fuel failed: int = fire count_failures(systems, count)
+
+    fire print_status(failed)
+    land 0
+}

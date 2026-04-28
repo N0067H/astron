@@ -1,0 +1,29 @@
+stage print_manifest(items: [str], masses: [int], count: int) lands int {
+    fuel total: int = 0
+
+    spin i in 0..count {
+        fire log(items[i], masses[i])
+        total += masses[i]
+    }
+
+    land total
+}
+
+stage mass_status(total: int) lands str {
+    scan total <= 100 {
+        land "approved"
+    } fallback {
+        land "too heavy"
+    }
+}
+
+launch main {
+    fuel items: [str] = ["probe", "antenna", "battery", "camera"]
+    fuel masses: [int] = [30, 15, 40, 10]
+    payload count: int = 4
+    fuel total: int = fire print_manifest(items, masses, count)
+
+    fire log("total mass", total)
+    fire log("manifest", fire mass_status(total))
+    land 0
+}

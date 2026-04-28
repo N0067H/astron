@@ -1,0 +1,26 @@
+stage is_temperature_safe(temp: int) lands flag {
+    land temp >= -20 and temp <= 80
+}
+
+launch main {
+    fuel temperature: int = 45
+    fuel signal_locked: flag = true
+    fuel manual_abort: flag = false
+
+    scan manual_abort or not signal_locked {
+        fire log("operator abort")
+        abort
+    }
+
+    burn temperature < 90 {
+        temperature += 15
+        fire log("temperature", temperature)
+
+        scan not fire is_temperature_safe(temperature) {
+            fire log("thermal limit exceeded")
+            abort
+        }
+    }
+
+    land 0
+}

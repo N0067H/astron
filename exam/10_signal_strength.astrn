@@ -1,0 +1,32 @@
+stage signal_quality(strength: int) lands str {
+    scan strength >= 80 {
+        land "excellent"
+    } fallback {
+        scan strength >= 50 {
+            land "stable"
+        } fallback {
+            land "weak"
+        }
+    }
+}
+
+stage adjust_strength(strength: int, boost: int) lands int {
+    fuel next: int = strength + boost
+
+    scan next > 100 {
+        land 100
+    } fallback {
+        land next
+    }
+}
+
+launch main {
+    fuel strength: int = 35
+
+    spin attempt in 1..=4 {
+        strength = fire adjust_strength(strength, 18)
+        fire log("attempt", attempt, fire signal_quality(strength), strength)
+    }
+
+    land 0
+}

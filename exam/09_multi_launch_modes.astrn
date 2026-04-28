@@ -1,0 +1,36 @@
+ignite {
+    payload craft: str = "Astra"
+    payload simulator: flag = true
+}
+
+stage mode_label(active: flag) lands str {
+    scan active {
+        land "simulation"
+    } fallback {
+        land "flight"
+    }
+}
+
+launch main {
+    fire log(craft, fire mode_label(simulator))
+    fire log("default launch path")
+    land 0
+}
+
+launch report {
+    fire log("report for", craft)
+    fire log("simulator enabled", simulator)
+    land 0
+}
+
+launch dryrun {
+    fuel checks: int = 0
+
+    spin i in 1..=3 {
+        checks += 1
+        fire log("dryrun check", i)
+    }
+
+    fire log("checks complete", checks)
+    land 0
+}

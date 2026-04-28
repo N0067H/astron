@@ -1,0 +1,22 @@
+stage ready_to_launch(timer: int, pressure: float) lands flag {
+    land timer == 0 and pressure >= 90.0
+}
+
+launch main {
+    fuel timer: int = 5
+    fuel pressure: float = 82.5
+
+    burn timer > 0 {
+        fire log("countdown", timer)
+        timer -= 1
+        pressure += 1.5
+    }
+
+    scan fire ready_to_launch(timer, pressure) {
+        fire log("ignition confirmed")
+    } fallback {
+        fire log("hold launch")
+    }
+
+    land 0
+}

@@ -1,0 +1,31 @@
+stage log_lap(lap: int) lands void {
+    scan lap % 2 == 0 {
+        fire log("even lap", lap)
+    } fallback {
+        fire log("odd lap", lap)
+    }
+}
+
+launch main {
+    fuel lap: int = 0
+    fuel fuel_level: float = 12.5
+
+    orbit {
+        lap += 1
+        fuel_level -= 2.5
+
+        fire log_lap(lap)
+
+        scan fuel_level <= 0.0 {
+            fire log("fuel depleted")
+            eject
+        }
+
+        scan lap >= 3 {
+            fire log("planned orbit complete")
+            eject
+        }
+    }
+
+    land 0
+}

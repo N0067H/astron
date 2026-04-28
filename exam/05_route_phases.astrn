@@ -1,0 +1,30 @@
+stage describe_phase(phase: int) lands void {
+    route phase {
+        1 => fire log("phase", phase, "preflight")
+        2 => fire log("phase", phase, "launch")
+        3 => fire log("phase", phase, "orbit")
+        4 => fire log("phase", phase, "return")
+    }
+}
+
+stage phase_checksum(phase: int) lands byte {
+    scan phase == 1 {
+        land 0x1A
+    } fallback {
+        scan phase == 2 {
+            land 0x2B
+        } fallback {
+            land 0xFF
+        }
+    }
+}
+
+launch main {
+    spin phase in 1..=4 {
+        fire describe_phase(phase)
+    }
+
+    payload checksum: byte = fire phase_checksum(2)
+    fire log("selected checksum", checksum)
+    land 0
+}

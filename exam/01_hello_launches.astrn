@@ -1,0 +1,20 @@
+ignite {
+    payload app_name: str = "Astron Examples"
+    payload version: str = "1.0.0"
+}
+
+stage banner(name: str, app_version: str, title: str) lands void {
+    fire log(name, app_version, title)
+}
+
+launch main {
+    fire banner(app_name, version, "main launch")
+    fire log("hello, world")
+    land 0
+}
+
+launch diagnostics {
+    fire banner(app_name, version, "diagnostics launch")
+    fire log("all startup variables are available here")
+    land 0
+}
