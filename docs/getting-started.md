@@ -14,7 +14,10 @@ The binary is at `target/release/astron`.
 
 ```sh
 astron <file.astrn>
+astron <file.astrn> --launch <name>
 ```
+
+`--launch` selects which `launch` block to run. Defaults to `main`.
 
 ## Hello World
 
@@ -25,4 +28,4 @@ launch main {
 }
 ```
 
-Every Astron program requires a `launch main` block as its entry point and must end with `land <int>`.
+Every `launch` block must end with `land <int>`. The default entry point is `launch main`.

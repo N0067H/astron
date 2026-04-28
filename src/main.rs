@@ -8,10 +8,21 @@ pub mod token;
 use std::{env, fs};
 
 fn main() {
-    let path = env::args().nth(1).unwrap_or_else(|| {
-        eprintln!("usage: astron <file.astrn>");
+    let mut args = env::args().skip(1);
+    let path = args.next().unwrap_or_else(|| {
+        eprintln!("usage: astron <file.astrn> [--launch <name>]");
         std::process::exit(1);
     });
+
+    let mut target = "main".to_string();
+    while let Some(arg) = args.next() {
+        if arg == "--launch" {
+            target = args.next().unwrap_or_else(|| {
+                eprintln!("error: --launch requires a name");
+                std::process::exit(1);
+            });
+        }
+    }
 
     let source = fs::read_to_string(&path).unwrap_or_else(|e| {
         eprintln!("error: cannot read '{}': {}", path, e);
@@ -41,5 +52,5 @@ fn main() {
     }
 
     let interp = interpreter::Interpreter::new(&program);
-    interp.run(&program);
+    interp.run(&program, &target);
 }

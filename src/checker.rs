@@ -525,9 +525,14 @@ pub fn check(program: &Program) -> Vec<TypeError> {
     let mut env = TypeEnv::new();
     checker.check_stmts(&program.ignite_body, &mut env, &Type::Void);
 
-    // check each item
+    // check each item; all launches inherit ignite env
     for item in &program.items {
-        checker.check_item(item);
+        match item {
+            Item::Launch { body, .. } => {
+                checker.check_stmts(body, &mut env, &Type::Int);
+            }
+            _ => checker.check_item(item),
+        }
     }
 
     checker.errors

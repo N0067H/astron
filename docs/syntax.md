@@ -9,15 +9,42 @@
 
 ```astrn
 ignite {
-    // runs before launch main
+    // runs before any launch — variables declared here are accessible in all launch blocks
+    payload version: str = "1.0.0"
 }
 
 launch main {
+    fire log(version)
     land 0
 }
 ```
 
-> **Note:** Variables declared in `ignite` are currently not accessible inside `launch main`. See [known issues](./known-issues.md).
+Multiple `launch` blocks can be defined in one file. `ignite` runs once before whichever `launch` is selected, and its variables are shared across all of them.
+
+```astrn
+ignite {
+    payload db_url: str = "localhost:5432"
+}
+
+launch main {
+    fire log(db_url)
+    land 0
+}
+
+launch test {
+    fire log("running tests against")
+    fire log(db_url)
+    land 0
+}
+```
+
+To run a specific launch:
+
+```sh
+astron file.astrn --launch test
+```
+
+The default is `main` if `--launch` is not specified.
 
 ## Variables
 

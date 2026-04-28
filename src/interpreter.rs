@@ -142,14 +142,13 @@ impl Interpreter {
         Interpreter { functions }
     }
 
-    pub fn run(&self, program: &Program) {
+    pub fn run(&self, program: &Program, target: &str) {
         let mut env = Env::new();
         self.exec_stmts(&program.ignite_body, &mut env);
 
         for item in &program.items {
             if let Item::Launch { name, body } = item {
-                if name == "main" {
-                    let mut env = Env::new();
+                if name == target {
                     if let Some(Signal::Return(Value::Int(code))) = self.exec_stmts(body, &mut env)
                     {
                         std::process::exit(code as i32);
@@ -158,7 +157,8 @@ impl Interpreter {
                 }
             }
         }
-        panic!("no 'launch main' found");
+        eprintln!("error: no 'launch {}' found", target);
+        std::process::exit(1);
     }
 
     fn exec_block(&self, stmts: &[Stmt], env: &mut Env) -> Option<Signal> {
