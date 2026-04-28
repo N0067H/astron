@@ -1,15 +1,34 @@
 mod ast;
+mod checker;
 mod interpreter;
 mod lexer;
 mod parser;
 pub mod token;
 
-use std::fs;
+use std::{env, fs};
 
 fn main() {
-    let source = fs::read_to_string("exam/mission.astrn").expect("failed to read mission.astrn");
+    let path = env::args().nth(1).unwrap_or_else(|| {
+        eprintln!("usage: astron <file.astrn>");
+        std::process::exit(1);
+    });
+
+    let source = fs::read_to_string(&path).unwrap_or_else(|e| {
+        eprintln!("error: cannot read '{}': {}", path, e);
+        std::process::exit(1);
+    });
+
     let tokens = lexer::tokenize(&source);
     let program = parser::parse(tokens);
+
+    let errors = checker::check(&program);
+    if !errors.is_empty() {
+        for e in &errors {
+            eprintln!("{}:{}:{}: {}", path, e.span.line, e.span.col, e.msg);
+        }
+        std::process::exit(1);
+    }
+
     let interp = interpreter::Interpreter::new(&program);
     interp.run(&program);
 }

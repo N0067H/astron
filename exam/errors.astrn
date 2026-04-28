@@ -1,0 +1,26 @@
+ignite {}
+
+stage wrong_return() lands int {
+    land "oops"
+}
+
+stage add_one(n: int) lands int {
+    land n
+}
+
+launch main {
+    payload x: int = 10
+    x = 20
+
+    fuel y: int = "hello"
+
+    scan 42 {
+        fire log("never")
+    }
+
+    fuel z: int = ghost
+
+    fire add_one("not a number")
+
+    land 0
+}
