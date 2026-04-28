@@ -20,10 +20,6 @@ jobs:
             target: aarch64-apple-darwin
             artifact: astron-aarch64-macos
             ext: tar.gz
-          - os: macos-13
-            target: x86_64-apple-darwin
-            artifact: astron-x86_64-macos
-            ext: tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: astron-x86_64-windows
