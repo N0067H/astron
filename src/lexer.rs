@@ -1,10 +1,17 @@
 use crate::token::{Token, TokenKind};
 
+pub struct LexError {
+    pub line: usize,
+    pub col: usize,
+    pub msg: String,
+}
+
 struct Lexer {
     source: Vec<char>,
     pos: usize,
     line: usize,
     col: usize,
+    errors: Vec<LexError>,
 }
 
 impl Lexer {
@@ -18,6 +25,7 @@ impl Lexer {
             pos: 0,
             line: 1,
             col: 1,
+            errors: Vec::new(),
         }
     }
 
@@ -65,13 +73,20 @@ impl Lexer {
                 self.advance();
             }
             let s: String = self.source[start..self.pos].iter().collect();
-            let n = u8::from_str_radix(&s[2..], 16).unwrap_or_else(|_| {
-                panic!(
-                    "line {}:{}: hex literal out of byte range (0x00..=0xFF)",
-                    line, col
-                )
-            });
-            return Token::new(TokenKind::ByteLit(n), line, col);
+            match u8::from_str_radix(&s[2..], 16) {
+                Ok(n) => return Token::new(TokenKind::ByteLit(n), line, col),
+                Err(_) => {
+                    self.errors.push(LexError {
+                        line,
+                        col,
+                        msg: format!(
+                            "hex literal '{}' out of byte range (0x00..=0xFF)",
+                            s
+                        ),
+                    });
+                    return Token::new(TokenKind::ByteLit(0), line, col);
+                }
+            }
         }
 
         while self.peek().is_ascii_digit() {
@@ -251,7 +266,14 @@ impl Lexer {
                     self.advance();
                     TokenKind::NotEq
                 }
-                _ => panic!("line {}:{}: '!' must be followed by '='", line, col),
+                _ => {
+                    self.errors.push(LexError {
+                        line,
+                        col,
+                        msg: "'!' must be followed by '='".to_string(),
+                    });
+                    return self.next_token();
+                }
             },
             '<' => match self.peek() {
                 '=' => {
@@ -278,7 +300,14 @@ impl Lexer {
                         _ => TokenKind::DotDot,
                     }
                 }
-                _ => panic!("line {}:{}: unexpected '.'", line, col),
+                _ => {
+                    self.errors.push(LexError {
+                        line,
+                        col,
+                        msg: "unexpected '.'".to_string(),
+                    });
+                    return self.next_token();
+                }
             },
             '{' => TokenKind::LBrace,
             '}' => TokenKind::RBrace,
@@ -288,14 +317,21 @@ impl Lexer {
             ']' => TokenKind::RBracket,
             ',' => TokenKind::Comma,
             ':' => TokenKind::Colon,
-            _ => panic!("line {}:{}: unexpected character '{}'", line, col, c),
+            _ => {
+                self.errors.push(LexError {
+                    line,
+                    col,
+                    msg: format!("unexpected character '{}'", c),
+                });
+                return self.next_token();
+            }
         };
 
         Token::new(kind, line, col)
     }
 }
 
-pub fn tokenize(source: &str) -> Vec<Token> {
+pub fn tokenize(source: &str) -> (Vec<Token>, Vec<LexError>) {
     let mut lexer = Lexer::new(source);
     let mut tokens = Vec::new();
 
@@ -308,5 +344,5 @@ pub fn tokenize(source: &str) -> Vec<Token> {
         }
     }
 
-    tokens
+    (tokens, lexer.errors)
 }

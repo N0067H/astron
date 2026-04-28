@@ -1,14 +1,24 @@
 use crate::ast::*;
 use crate::token::{Token, TokenKind};
 
+pub struct ParseError {
+    pub span: Span,
+    pub msg: String,
+}
+
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    errors: Vec<ParseError>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Parser { tokens, pos: 0 }
+        Parser {
+            tokens,
+            pos: 0,
+            errors: Vec::new(),
+        }
     }
 
     fn peek(&self) -> &Token {
@@ -30,16 +40,59 @@ impl Parser {
         }
     }
 
+    fn error(&mut self, span: Span, msg: impl Into<String>) {
+        self.errors.push(ParseError {
+            span,
+            msg: msg.into(),
+        });
+    }
+
+    // Skip tokens until a safe statement boundary is found.
+    fn sync_to_stmt(&mut self) {
+        loop {
+            match self.peek_kind() {
+                TokenKind::Eof
+                | TokenKind::RBrace
+                | TokenKind::Payload
+                | TokenKind::Fuel
+                | TokenKind::Scan
+                | TokenKind::Route
+                | TokenKind::Burn
+                | TokenKind::Spin
+                | TokenKind::Orbit
+                | TokenKind::Fire
+                | TokenKind::Land
+                | TokenKind::Eject
+                | TokenKind::Pass
+                | TokenKind::Abort
+                | TokenKind::Ident(_) => break,
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    // Skip tokens until a top-level item boundary.
+    fn sync_to_top_level(&mut self) {
+        loop {
+            match self.peek_kind() {
+                TokenKind::Eof | TokenKind::Stage | TokenKind::Launch => break,
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+    }
+
     fn expect(&mut self, kind: TokenKind) -> Span {
         let span = self.span();
         if self.peek_kind() != &kind {
-            panic!(
-                "line {}:{}: expected {:?}, found {:?}",
-                span.line,
-                span.col,
-                kind,
-                self.peek_kind()
+            self.error(
+                span,
+                format!("expected {:?}, found {:?}", kind, self.peek_kind()),
             );
+            return span;
         }
         self.advance();
         span
@@ -61,12 +114,13 @@ impl Parser {
                 self.advance();
                 (s, span)
             }
-            _ => panic!(
-                "line {}:{}: expected identifier, found {:?}",
-                span.line,
-                span.col,
-                self.peek_kind()
-            ),
+            _ => {
+                self.error(
+                    span,
+                    format!("expected identifier, found {:?}", self.peek_kind()),
+                );
+                (String::new(), span)
+            }
         }
     }
 
@@ -121,12 +175,13 @@ impl Parser {
                 self.expect(TokenKind::RBracket);
                 Type::Array(Box::new(inner))
             }
-            _ => panic!(
-                "line {}:{}: expected type, found {:?}",
-                span.line,
-                span.col,
-                self.peek_kind()
-            ),
+            _ => {
+                self.error(span, format!("expected type, found {:?}", self.peek_kind()));
+                if !matches!(self.peek_kind(), TokenKind::Eof) {
+                    self.advance();
+                }
+                Type::Void
+            }
         }
     }
 
@@ -359,12 +414,24 @@ impl Parser {
                 self.expect(TokenKind::RBracket);
                 Spanned::new(ExprKind::ArrayLit(elems), span)
             }
-            _ => panic!(
-                "line {}:{}: unexpected token in expression: {:?}",
-                span.line,
-                span.col,
-                self.peek_kind()
-            ),
+            _ => {
+                let is_eof = matches!(self.peek_kind(), TokenKind::Eof);
+                self.error(
+                    span,
+                    if is_eof {
+                        "unexpected end of file in expression".to_string()
+                    } else {
+                        format!(
+                            "unexpected token in expression: {:?}",
+                            self.peek_kind()
+                        )
+                    },
+                );
+                if !is_eof {
+                    self.advance();
+                }
+                Spanned::new(ExprKind::Error, span)
+            }
         }
     }
 
@@ -484,12 +551,17 @@ impl Parser {
                 Spanned::new(StmtKind::Abort, span)
             }
             TokenKind::Ident(_) => self.parse_assign(span),
-            _ => panic!(
-                "line {}:{}: unexpected token at start of statement: {:?}",
-                span.line,
-                span.col,
-                self.peek_kind()
-            ),
+            _ => {
+                self.error(
+                    span,
+                    format!(
+                        "unexpected token at start of statement: {:?}",
+                        self.peek_kind()
+                    ),
+                );
+                self.sync_to_stmt();
+                Spanned::new(StmtKind::Error, span)
+            }
         }
     }
 
@@ -531,12 +603,17 @@ impl Parser {
             TokenKind::MulAssign => AssignOp::Mul,
             TokenKind::DivAssign => AssignOp::Div,
             TokenKind::ModAssign => AssignOp::Mod,
-            _ => panic!(
-                "line {}:{}: expected assignment operator, found {:?}",
-                span.line,
-                span.col,
-                self.peek_kind()
-            ),
+            _ => {
+                self.error(
+                    span,
+                    format!(
+                        "expected assignment operator, found {:?}",
+                        self.peek_kind()
+                    ),
+                );
+                self.sync_to_stmt();
+                return Spanned::new(StmtKind::Error, span);
+            }
         };
         self.advance();
 
@@ -587,7 +664,7 @@ impl Parser {
         Item::Launch { name, body }
     }
 
-    pub fn parse(&mut self) -> Program {
+    fn parse_program(&mut self) -> Program {
         let ignite_body = if self.eat(TokenKind::Ignite) {
             self.parse_block()
         } else {
@@ -605,12 +682,17 @@ impl Parser {
                     self.advance();
                     items.push(self.parse_launch());
                 }
-                _ => panic!(
-                    "line {}:{}: expected 'stage' or 'launch', found {:?}",
-                    self.peek().line,
-                    self.peek().col,
-                    self.peek_kind()
-                ),
+                _ => {
+                    let span = self.span();
+                    self.error(
+                        span,
+                        format!(
+                            "expected 'stage' or 'launch', found {:?}",
+                            self.peek_kind()
+                        ),
+                    );
+                    self.sync_to_top_level();
+                }
             }
         }
 
@@ -618,6 +700,8 @@ impl Parser {
     }
 }
 
-pub fn parse(tokens: Vec<Token>) -> Program {
-    Parser::new(tokens).parse()
+pub fn parse(tokens: Vec<Token>) -> (Program, Vec<ParseError>) {
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program();
+    (program, parser.errors)
 }

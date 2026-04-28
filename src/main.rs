@@ -18,8 +18,19 @@ fn main() {
         std::process::exit(1);
     });
 
-    let tokens = lexer::tokenize(&source);
-    let program = parser::parse(tokens);
+    let (tokens, lex_errors) = lexer::tokenize(&source);
+    let (program, parse_errors) = parser::parse(tokens);
+
+    let had_syntax_error = !lex_errors.is_empty() || !parse_errors.is_empty();
+    for e in &lex_errors {
+        eprintln!("{}:{}:{}: {}", path, e.line, e.col, e.msg);
+    }
+    for e in &parse_errors {
+        eprintln!("{}:{}:{}: {}", path, e.span.line, e.span.col, e.msg);
+    }
+    if had_syntax_error {
+        std::process::exit(1);
+    }
 
     let errors = checker::check(&program);
     if !errors.is_empty() {

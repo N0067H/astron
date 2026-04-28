@@ -79,6 +79,8 @@ pub enum ExprKind {
         end: Box<Expr>,
         inclusive: bool,
     },
+
+    Error,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +165,7 @@ pub enum StmtKind {
     Eject,
     Pass,
     Abort,
+    Error,
 }
 
 #[derive(Debug, Clone)]

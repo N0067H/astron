@@ -310,6 +310,7 @@ impl Interpreter {
             StmtKind::Eject => Some(Signal::Break),
             StmtKind::Pass => Some(Signal::Continue),
             StmtKind::Abort => std::process::exit(1),
+            StmtKind::Error => unreachable!("parse error node reached interpreter"),
         }
     }
 
@@ -376,6 +377,8 @@ impl Interpreter {
             }
 
             ExprKind::Range { .. } => panic!("range expression outside spin"),
+
+            ExprKind::Error => unreachable!("parse error node reached interpreter"),
         }
     }
 

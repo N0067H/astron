@@ -289,7 +289,7 @@ impl Checker {
                 }
             },
 
-            StmtKind::Eject | StmtKind::Pass | StmtKind::Abort => {}
+            StmtKind::Eject | StmtKind::Pass | StmtKind::Abort | StmtKind::Error => {}
         }
     }
 
@@ -402,6 +402,8 @@ impl Checker {
                 self.error(expr.span, "range expression can only appear in spin");
                 None
             }
+
+            ExprKind::Error => None,
         }
     }
 
