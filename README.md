@@ -18,4 +18,4 @@ Astron is a fun programming language where every keyword is borrowed from the wo
 
 ---
 
-Check the <a href="./exam/mission.astrn">example code</a>!
+Check the <a href="./exam/">example code</a>!
