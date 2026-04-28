@@ -65,8 +65,13 @@ impl Lexer {
                 self.advance();
             }
             let s: String = self.source[start..self.pos].iter().collect();
-            let n = i64::from_str_radix(&s[2..], 16).expect("invalid hex literal");
-            return Token::new(TokenKind::IntLit(n), line, col);
+            let n = u8::from_str_radix(&s[2..], 16).unwrap_or_else(|_| {
+                panic!(
+                    "line {}:{}: hex literal out of byte range (0x00..=0xFF)",
+                    line, col
+                )
+            });
+            return Token::new(TokenKind::ByteLit(n), line, col);
         }
 
         while self.peek().is_ascii_digit() {

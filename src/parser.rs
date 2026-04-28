@@ -75,6 +75,7 @@ impl Parser {
             self.peek_kind(),
             TokenKind::IntLit(_)
                 | TokenKind::FloatLit(_)
+                | TokenKind::ByteLit(_)
                 | TokenKind::StrLit(_)
                 | TokenKind::BoolLit(_)
                 | TokenKind::Air
@@ -319,6 +320,10 @@ impl Parser {
             TokenKind::BoolLit(b) => {
                 self.advance();
                 Spanned::new(ExprKind::BoolLit(b), span)
+            }
+            TokenKind::ByteLit(b) => {
+                self.advance();
+                Spanned::new(ExprKind::ByteLit(b), span)
             }
             TokenKind::Air => {
                 self.advance();

@@ -45,6 +45,7 @@ pub enum TokenKind {
     // Literals
     IntLit(i64),
     FloatLit(f64),
+    ByteLit(u8),
     StrLit(String),
     BoolLit(bool),
     Ident(String),
