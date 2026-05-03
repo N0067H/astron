@@ -79,10 +79,7 @@ impl Lexer {
                     self.errors.push(LexError {
                         line,
                         col,
-                        msg: format!(
-                            "hex literal '{}' out of byte range (0x00..=0xFF)",
-                            s
-                        ),
+                        msg: format!("hex literal '{}' out of byte range (0x00..=0xFF)", s),
                     });
                     return Token::new(TokenKind::ByteLit(0), line, col);
                 }
@@ -164,6 +161,7 @@ impl Lexer {
             "pass" => TokenKind::Pass,
             "abort" => TokenKind::Abort,
             "in" => TokenKind::In,
+            "import" => TokenKind::Import,
             "int" => TokenKind::Int,
             "float" => TokenKind::Float,
             "str" => TokenKind::Str,

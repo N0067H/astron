@@ -1,0 +1,17 @@
+import "./lib/mission_tools.astrn"
+
+launch main {
+    payload code: str = fire mission_code(3)
+    payload margin: int = fire fuel_margin(120, 35)
+
+    fire log("mission", mission_prefix, code)
+    fire log("fuel margin", margin)
+
+    scan margin >= 80 {
+        fire log("status", "ready")
+    } fallback {
+        fire log("status", "review")
+    }
+
+    land 0
+}

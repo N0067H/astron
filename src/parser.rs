@@ -77,7 +77,11 @@ impl Parser {
     fn sync_to_top_level(&mut self) {
         loop {
             match self.peek_kind() {
-                TokenKind::Eof | TokenKind::Stage | TokenKind::Launch => break,
+                TokenKind::Eof
+                | TokenKind::Import
+                | TokenKind::Ignite
+                | TokenKind::Stage
+                | TokenKind::Launch => break,
                 _ => {
                     self.advance();
                 }
@@ -421,10 +425,7 @@ impl Parser {
                     if is_eof {
                         "unexpected end of file in expression".to_string()
                     } else {
-                        format!(
-                            "unexpected token in expression: {:?}",
-                            self.peek_kind()
-                        )
+                        format!("unexpected token in expression: {:?}", self.peek_kind())
                     },
                 );
                 if !is_eof {
@@ -606,10 +607,7 @@ impl Parser {
             _ => {
                 self.error(
                     span,
-                    format!(
-                        "expected assignment operator, found {:?}",
-                        self.peek_kind()
-                    ),
+                    format!("expected assignment operator, found {:?}", self.peek_kind()),
                 );
                 self.sync_to_stmt();
                 return Spanned::new(StmtKind::Error, span);
@@ -665,15 +663,44 @@ impl Parser {
     }
 
     fn parse_program(&mut self) -> Program {
-        let ignite_body = if self.eat(TokenKind::Ignite) {
-            self.parse_block()
-        } else {
-            Vec::new()
-        };
-
+        let mut imports = Vec::new();
+        let mut ignite_body = Vec::new();
+        let mut seen_ignite = false;
         let mut items = Vec::new();
+
         while !matches!(self.peek_kind(), TokenKind::Eof) {
-            match self.peek_kind() {
+            match self.peek_kind().clone() {
+                TokenKind::Import => {
+                    let span = self.span();
+                    self.advance();
+                    match self.peek_kind().clone() {
+                        TokenKind::StrLit(path) => {
+                            self.advance();
+                            imports.push(Import { path, span });
+                        }
+                        _ => {
+                            self.error(
+                                self.span(),
+                                format!(
+                                    "expected string literal after import, found {:?}",
+                                    self.peek_kind()
+                                ),
+                            );
+                            self.sync_to_top_level();
+                        }
+                    }
+                }
+                TokenKind::Ignite => {
+                    let span = self.span();
+                    self.advance();
+                    if seen_ignite {
+                        self.error(span, "only one ignite block is allowed per file");
+                        let _ = self.parse_block();
+                    } else {
+                        seen_ignite = true;
+                        ignite_body = self.parse_block();
+                    }
+                }
                 TokenKind::Stage => {
                     self.advance();
                     items.push(self.parse_stage());
@@ -687,7 +714,7 @@ impl Parser {
                     self.error(
                         span,
                         format!(
-                            "expected 'stage' or 'launch', found {:?}",
+                            "expected 'import', 'ignite', 'stage', or 'launch', found {:?}",
                             self.peek_kind()
                         ),
                     );
@@ -696,7 +723,11 @@ impl Parser {
             }
         }
 
-        Program { ignite_body, items }
+        Program {
+            imports,
+            ignite_body,
+            items,
+        }
     }
 }
 

@@ -46,6 +46,22 @@ astron file.astrn --launch test
 
 The default is `main` if `--launch` is not specified.
 
+## Imports
+
+Use `import` with a string path to include stages, launches, and ignite declarations from another Astron file.
+
+```astrn
+import "./math.astrn"
+
+launch main {
+    payload total: int = fire add(2, 3)
+    fire log(total)
+    land 0
+}
+```
+
+Import paths are resolved relative to the file that contains the `import`. Each file is loaded once, and cyclic imports are rejected.
+
 ## Variables
 
 | General   | Astron    |

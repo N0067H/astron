@@ -2,11 +2,17 @@
 pub struct Span {
     pub line: usize,
     pub col: usize,
+    pub file: usize,
 }
 
 impl Span {
     pub fn new(line: usize, col: usize) -> Self {
-        Span { line, col }
+        Span { line, col, file: 0 }
+    }
+
+    pub fn in_file(mut self, file: usize) -> Self {
+        self.file = file;
+        self
     }
 }
 
@@ -197,6 +203,12 @@ pub struct Param {
 }
 
 #[derive(Debug, Clone)]
+pub struct Import {
+    pub path: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
 pub enum Item {
     // stage name(params) lands type { body }
     Stage {
@@ -215,6 +227,7 @@ pub enum Item {
 
 #[derive(Debug)]
 pub struct Program {
+    pub imports: Vec<Import>,
     pub ignite_body: Vec<Stmt>,
     pub items: Vec<Item>,
 }

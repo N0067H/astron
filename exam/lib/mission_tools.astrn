@@ -1,0 +1,27 @@
+ignite {
+    payload mission_prefix: str = "ASTRON"
+}
+
+stage mission_code(orbit_id: int) lands str {
+    route orbit_id {
+        1 => land "ARTEMIS-LEO"
+        2 => land "ARTEMIS-MEO"
+        3 => land "ARTEMIS-GEO"
+    }
+
+    land "ARTEMIS-DEEP"
+}
+
+stage orbit_label(orbit_id: int) lands str {
+    route orbit_id {
+        1 => land "LEO"
+        2 => land "MEO"
+        3 => land "GEO"
+    }
+
+    land "DEEP"
+}
+
+stage fuel_margin(fuel_amount: int, reserve: int) lands int {
+    land fuel_amount - reserve
+}

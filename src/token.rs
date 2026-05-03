@@ -32,6 +32,7 @@ pub enum TokenKind {
     Pass,
     Abort,
     In,
+    Import,
 
     // Types
     Int,
