@@ -81,6 +81,7 @@ impl Parser {
                 | TokenKind::Import
                 | TokenKind::Ignite
                 | TokenKind::Stage
+                | TokenKind::Enum
                 | TokenKind::Launch => break,
                 _ => {
                     self.advance();
@@ -178,6 +179,10 @@ impl Parser {
                 let inner = self.parse_type();
                 self.expect(TokenKind::RBracket);
                 Type::Array(Box::new(inner))
+            }
+            TokenKind::Ident(name) => {
+                self.advance();
+                Type::Enum(name)
             }
             _ => {
                 self.error(span, format!("expected type, found {:?}", self.peek_kind()));
@@ -662,6 +667,19 @@ impl Parser {
         Item::Launch { name, body }
     }
 
+    fn parse_enum(&mut self) -> Item {
+        let (name, _) = self.expect_ident();
+        self.expect(TokenKind::LBrace);
+        let mut variants = Vec::new();
+        while !matches!(self.peek_kind(), TokenKind::RBrace | TokenKind::Eof) {
+            let (name, span) = self.expect_ident();
+            variants.push(EnumVariant { name, span });
+            self.eat(TokenKind::Comma);
+        }
+        self.expect(TokenKind::RBrace);
+        Item::Enum { name, variants }
+    }
+
     fn parse_program(&mut self) -> Program {
         let mut imports = Vec::new();
         let mut ignite_body = Vec::new();
@@ -705,6 +723,10 @@ impl Parser {
                     self.advance();
                     items.push(self.parse_stage());
                 }
+                TokenKind::Enum => {
+                    self.advance();
+                    items.push(self.parse_enum());
+                }
                 TokenKind::Launch => {
                     self.advance();
                     items.push(self.parse_launch());
@@ -714,7 +736,7 @@ impl Parser {
                     self.error(
                         span,
                         format!(
-                            "expected 'import', 'ignite', 'stage', or 'launch', found {:?}",
+                            "expected 'import', 'ignite', 'stage', 'enum', or 'launch', found {:?}",
                             self.peek_kind()
                         ),
                     );

@@ -40,6 +40,7 @@ pub enum Type {
     Byte,
     Void,
     Array(Box<Type>),
+    Enum(String),
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +210,12 @@ pub struct Import {
 }
 
 #[derive(Debug, Clone)]
+pub struct EnumVariant {
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
 pub enum Item {
     // stage name(params) lands type { body }
     Stage {
@@ -222,6 +229,11 @@ pub enum Item {
     Launch {
         name: String,
         body: Vec<Stmt>,
+    },
+
+    Enum {
+        name: String,
+        variants: Vec<EnumVariant>,
     },
 }
 

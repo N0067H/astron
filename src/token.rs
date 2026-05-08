@@ -19,6 +19,7 @@ pub enum TokenKind {
     Payload,
     Fuel,
     Stage,
+    Enum,
     Fire,
     Scan,
     Fallback,

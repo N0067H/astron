@@ -9,6 +9,7 @@ pub enum Value {
     Bool(bool),
     Byte(u8),
     Array(Vec<Value>),
+    Enum { enum_name: String, variant: String },
     Void,
 }
 
@@ -41,6 +42,7 @@ impl Value {
             Value::Str(s) => s.clone(),
             Value::Bool(b) => b.to_string(),
             Value::Byte(b) => format!("0x{:02X}", b),
+            Value::Enum { enum_name, variant } => format!("{}.{}", enum_name, variant),
             Value::Array(elems) => {
                 format!(
                     "[{}]",
@@ -86,12 +88,17 @@ impl Env {
     }
 
     fn get(&self, name: &str) -> &Value {
+        self.lookup(name)
+            .unwrap_or_else(|| panic!("undefined variable: {}", name))
+    }
+
+    fn lookup(&self, name: &str) -> Option<&Value> {
         for scope in self.scopes.iter().rev() {
             if let Some(val) = scope.get(name) {
-                return val;
+                return Some(val);
             }
         }
-        panic!("undefined variable: {}", name)
+        None
     }
 
     fn set(&mut self, name: &str, val: Value) {
@@ -126,20 +133,32 @@ impl Env {
 
 pub struct Interpreter {
     functions: HashMap<String, (Vec<Param>, Vec<Stmt>)>,
+    enum_variants: HashMap<String, String>,
 }
 
 impl Interpreter {
     pub fn new(program: &Program) -> Self {
         let mut functions = HashMap::new();
+        let mut enum_variants = HashMap::new();
         for item in &program.items {
-            if let Item::Stage {
-                name, params, body, ..
-            } = item
-            {
-                functions.insert(name.clone(), (params.clone(), body.clone()));
+            match item {
+                Item::Stage {
+                    name, params, body, ..
+                } => {
+                    functions.insert(name.clone(), (params.clone(), body.clone()));
+                }
+                Item::Enum { name, variants } => {
+                    for variant in variants {
+                        enum_variants.insert(variant.name.clone(), name.clone());
+                    }
+                }
+                Item::Launch { .. } => {}
             }
         }
-        Interpreter { functions }
+        Interpreter {
+            functions,
+            enum_variants,
+        }
     }
 
     pub fn run(&self, program: &Program, target: &str) {
@@ -323,7 +342,16 @@ impl Interpreter {
             ExprKind::ByteLit(b) => Value::Byte(*b),
             ExprKind::Air => Value::Void,
 
-            ExprKind::Ident(name) => env.get(name).clone(),
+            ExprKind::Ident(name) => env.lookup(name).cloned().unwrap_or_else(|| {
+                let enum_name = self
+                    .enum_variants
+                    .get(name)
+                    .unwrap_or_else(|| panic!("undefined variable: {}", name));
+                Value::Enum {
+                    enum_name: enum_name.clone(),
+                    variant: name.clone(),
+                }
+            }),
 
             ExprKind::Binary { op, lhs, rhs } => {
                 match op {
@@ -466,6 +494,16 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Str(x), Value::Str(y)) => x == y,
         (Value::Bool(x), Value::Bool(y)) => x == y,
         (Value::Byte(x), Value::Byte(y)) => x == y,
+        (
+            Value::Enum {
+                enum_name: enum_x,
+                variant: variant_x,
+            },
+            Value::Enum {
+                enum_name: enum_y,
+                variant: variant_y,
+            },
+        ) => enum_x == enum_y && variant_x == variant_y,
         (Value::Void, Value::Void) => true,
         _ => false,
     }

@@ -247,6 +247,11 @@ fn tag_program_spans(program: &mut Program, source_id: usize) {
                     tag_stmt_spans(stmt, source_id);
                 }
             }
+            Item::Enum { variants, .. } => {
+                for variant in variants {
+                    variant.span = variant.span.in_file(source_id);
+                }
+            }
         }
     }
 }

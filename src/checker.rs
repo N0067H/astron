@@ -1,5 +1,5 @@
 use crate::ast::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct TypeError {
     pub span: Span,
@@ -44,6 +44,8 @@ impl TypeEnv {
 
 struct Checker {
     funcs: HashMap<String, (Vec<Type>, Type)>,
+    enum_types: HashSet<String>,
+    enum_variants: HashMap<String, String>,
     errors: Vec<TypeError>,
 }
 
@@ -51,6 +53,8 @@ impl Checker {
     fn new() -> Self {
         Checker {
             funcs: HashMap::new(),
+            enum_types: HashSet::new(),
+            enum_variants: HashMap::new(),
             errors: Vec::new(),
         }
     }
@@ -72,14 +76,32 @@ impl Checker {
             } => {
                 let mut env = TypeEnv::new();
                 for p in params {
+                    self.check_type(&p.ty, p.name.as_str());
                     env.define(p.name.clone(), p.ty.clone(), false);
                 }
+                self.check_type(ret_type, "return");
                 self.check_stmts(body, &mut env, ret_type);
             }
             Item::Launch { body, .. } => {
                 let mut env = TypeEnv::new();
                 self.check_stmts(body, &mut env, &Type::Int);
             }
+            Item::Enum { .. } => {}
+        }
+    }
+
+    fn check_type(&mut self, ty: &Type, context: &str) {
+        match ty {
+            Type::Array(inner) => self.check_type(inner, context),
+            Type::Enum(name) => {
+                if !self.enum_types.contains(name) {
+                    self.error(
+                        Span::new(1, 1),
+                        format!("unknown type '{}' for {}", name, context),
+                    );
+                }
+            }
+            Type::Int | Type::Float | Type::Str | Type::Flag | Type::Byte | Type::Void => {}
         }
     }
 
@@ -104,6 +126,7 @@ impl Checker {
                 ty,
                 init,
             } => {
+                self.check_type(ty, name);
                 if let Some(init_ty) = self.check_expr(init, env) {
                     if !assignable(ty, &init_ty) {
                         self.error(
@@ -304,10 +327,14 @@ impl Checker {
 
             ExprKind::Ident(name) => match env.get(name) {
                 Some((ty, _)) => Some(ty.clone()),
-                None => {
-                    self.error(expr.span, format!("undefined variable '{}'", name));
-                    None
-                }
+                None => self
+                    .enum_variants
+                    .get(name)
+                    .map(|enum_name| Type::Enum(enum_name.clone()))
+                    .or_else(|| {
+                        self.error(expr.span, format!("undefined variable '{}'", name));
+                        None
+                    }),
             },
 
             ExprKind::Binary { op, lhs, rhs } => {
@@ -505,7 +532,35 @@ fn is_numeric(t: &Type) -> bool {
 pub fn check(program: &Program) -> Vec<TypeError> {
     let mut checker = Checker::new();
 
-    // register all stage signatures (with forward declaration)
+    for item in &program.items {
+        if let Item::Enum { name, variants } = item {
+            if !checker.enum_types.insert(name.clone()) {
+                checker.error(Span::new(1, 1), format!("duplicate enum '{}'", name));
+            }
+            let mut seen = HashSet::new();
+            for variant in variants {
+                if !seen.insert(variant.name.clone()) {
+                    checker.error(
+                        variant.span,
+                        format!("duplicate variant '{}' in enum '{}'", variant.name, name),
+                    );
+                }
+                if let Some(existing) = checker
+                    .enum_variants
+                    .insert(variant.name.clone(), name.clone())
+                {
+                    checker.error(
+                        variant.span,
+                        format!(
+                            "enum variant '{}' is already defined in enum '{}'",
+                            variant.name, existing
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
     for item in &program.items {
         if let Item::Stage {
             name,
@@ -521,16 +576,15 @@ pub fn check(program: &Program) -> Vec<TypeError> {
         }
     }
 
-    // ignite body
     let mut env = TypeEnv::new();
     checker.check_stmts(&program.ignite_body, &mut env, &Type::Void);
 
-    // check each item; all launches inherit ignite env
     for item in &program.items {
         match item {
             Item::Launch { body, .. } => {
                 checker.check_stmts(body, &mut env, &Type::Int);
             }
+            Item::Enum { .. } => {}
             _ => checker.check_item(item),
         }
     }

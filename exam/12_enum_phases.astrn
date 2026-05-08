@@ -1,0 +1,20 @@
+enum Phase {
+    Launch
+    Orbit
+    Landing
+}
+
+stage describe_phase(phase: Phase) lands str {
+    route phase {
+        Launch => land "launch"
+        Orbit => land "orbit"
+        Landing => land "landing"
+    }
+    land "unknown"
+}
+
+launch main {
+    payload phase: Phase = Orbit
+    fire log(fire describe_phase(phase))
+    land 0
+}

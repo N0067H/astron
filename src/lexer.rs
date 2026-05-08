@@ -148,6 +148,7 @@ impl Lexer {
             "payload" => TokenKind::Payload,
             "fuel" => TokenKind::Fuel,
             "stage" => TokenKind::Stage,
+            "enum" => TokenKind::Enum,
             "fire" => TokenKind::Fire,
             "lands" => TokenKind::Lands,
             "land" => TokenKind::Land,

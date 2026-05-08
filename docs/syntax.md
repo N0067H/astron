@@ -88,6 +88,7 @@ All variables require an explicit type annotation.
 | void    | `void`   |
 | null    | `air`    |
 | array   | `[type]` |
+| enum    | `enum`   |
 
 ```astrn
 payload nums: [int] = [1, 2, 3]
@@ -95,6 +96,33 @@ fuel names: [str] = ["apollo", "artemis"]
 payload checksum: byte = 0xFF
 fuel active: flag = true
 fuel nothing: str = air
+```
+
+## Enums
+
+Use `enum` to define named variants. Enum variants can be used as values and in `route` patterns.
+
+```astrn
+enum Phase {
+    Launch
+    Orbit
+    Landing
+}
+
+stage describe(phase: Phase) lands str {
+    route phase {
+        Launch => land "launch"
+        Orbit => land "orbit"
+        Landing => land "landing"
+    }
+    land "unknown"
+}
+
+launch main {
+    payload phase: Phase = Orbit
+    fire log(fire describe(phase))
+    land 0
+}
 ```
 
 ## Functions
