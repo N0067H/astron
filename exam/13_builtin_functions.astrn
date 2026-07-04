@@ -1,0 +1,15 @@
+launch main {
+    payload mission_name: str = "astron"
+    fuel modules: [str] = ["nav", "comms", "engine"]
+
+    fire log("mission", mission_name)
+    fire log("name length", fire len(mission_name))
+    fire log("module count", fire len(modules))
+    fire log("module count as text", fire to_str(fire len(modules)))
+    fire log("first module", fire to_str(modules[0]))
+
+    fire assert(fire len(mission_name) > 0)
+    fire assert(fire len(modules) == 3)
+
+    land 0
+}

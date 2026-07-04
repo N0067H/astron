@@ -442,6 +442,58 @@ impl Checker {
             return Some(Type::Void);
         }
 
+        if name == "len" {
+            if args.len() != 1 {
+                self.error(
+                    span,
+                    format!("'len' expects 1 argument, got {}", args.len()),
+                );
+            }
+            if let Some(arg_ty) = args.first().and_then(|arg| self.check_expr(arg, env)) {
+                match arg_ty {
+                    Type::Array(_) | Type::Str => {}
+                    other => {
+                        self.error(
+                            args[0].span,
+                            format!("'len' expects array or str, got {:?}", other),
+                        );
+                    }
+                }
+            }
+            return Some(Type::Int);
+        }
+
+        if name == "assert" {
+            if args.len() != 1 {
+                self.error(
+                    span,
+                    format!("'assert' expects 1 argument, got {}", args.len()),
+                );
+            }
+            if let Some(arg_ty) = args.first().and_then(|arg| self.check_expr(arg, env)) {
+                if arg_ty != Type::Flag {
+                    self.error(
+                        args[0].span,
+                        format!("'assert' expects flag, got {:?}", arg_ty),
+                    );
+                }
+            }
+            return Some(Type::Void);
+        }
+
+        if name == "to_str" {
+            if args.len() != 1 {
+                self.error(
+                    span,
+                    format!("'to_str' expects 1 argument, got {}", args.len()),
+                );
+            }
+            if let Some(arg) = args.first() {
+                self.check_expr(arg, env);
+            }
+            return Some(Type::Str);
+        }
+
         let sig = self.funcs.get(name).cloned();
         match sig {
             None => {

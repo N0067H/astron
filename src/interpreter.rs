@@ -422,6 +422,38 @@ impl Interpreter {
             return Value::Void;
         }
 
+        if name == "len" {
+            let arg = args
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| panic!("'len' expects 1 argument"));
+            return match arg {
+                Value::Array(elems) => Value::Int(elems.len() as i64),
+                Value::Str(s) => Value::Int(s.chars().count() as i64),
+                v => panic!("'len' expects array or str, got {:?}", v),
+            };
+        }
+
+        if name == "assert" {
+            let cond = args
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| panic!("'assert' expects 1 argument"));
+            if !cond.as_bool() {
+                eprintln!("assertion failed");
+                std::process::exit(1);
+            }
+            return Value::Void;
+        }
+
+        if name == "to_str" {
+            let arg = args
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| panic!("'to_str' expects 1 argument"));
+            return Value::Str(arg.display());
+        }
+
         let (params, body) = self
             .functions
             .get(name)
