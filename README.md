@@ -15,6 +15,7 @@ Astron is a fun programming language where every keyword is borrowed from the wo
 - [Getting Started](./docs/getting-started.md)
 - [Syntax Reference](./docs/syntax.md)
 - [Built-in Functions](./docs/builtins.md)
+- [Runtime Errors](./docs/runtime-errors.md)
 
 ---
 

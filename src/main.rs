@@ -75,7 +75,24 @@ fn main() {
     }
 
     let interp = interpreter::Interpreter::new(&loaded.program);
-    interp.run(&loaded.program, &target);
+    match interp.run(&loaded.program, &target) {
+        Ok(code) => std::process::exit(code),
+        Err(error) => {
+            let source_path = loaded
+                .sources
+                .get(error.span.file)
+                .map(|path| path.as_path())
+                .unwrap_or_else(|| Path::new(&path));
+            eprintln!(
+                "{}:{}:{}: runtime error: {}",
+                source_path.display(),
+                error.span.line,
+                error.span.col,
+                error.msg
+            );
+            std::process::exit(1);
+        }
+    }
 }
 
 struct LoadedProgram {
