@@ -7,7 +7,7 @@ pub struct LexError {
 }
 
 struct Lexer {
-    source: Vec<char>,
+    source: Vec<u8>,
     pos: usize,
     line: usize,
     col: usize,
@@ -16,12 +16,12 @@ struct Lexer {
 
 impl Lexer {
     fn new(source: &str) -> Self {
-        let mut chars: Vec<char> = source.chars().collect();
-        chars.push('\0');
-        chars.push('\0');
+        let mut bytes = source.as_bytes().to_vec();
+        bytes.push(b'\0');
+        bytes.push(b'\0');
 
         Lexer {
-            source: chars,
+            source: bytes,
             pos: 0,
             line: 1,
             col: 1,
@@ -29,18 +29,18 @@ impl Lexer {
         }
     }
 
-    fn peek(&self) -> char {
+    fn peek(&self) -> u8 {
         self.source[self.pos]
     }
 
-    fn peek_next(&self) -> char {
+    fn peek_next(&self) -> u8 {
         self.source[self.pos + 1]
     }
 
-    fn advance(&mut self) -> char {
+    fn advance(&mut self) -> u8 {
         let c = self.source[self.pos];
         self.pos += 1;
-        if c == '\n' {
+        if c == b'\n' {
             self.line += 1;
             self.col = 1;
         } else {
@@ -50,13 +50,13 @@ impl Lexer {
     }
 
     fn skip_whitespace(&mut self) {
-        while self.peek().is_whitespace() {
+        while self.peek().is_ascii_whitespace() {
             self.advance();
         }
     }
 
     fn skip_comment(&mut self) {
-        while self.peek() != '\n' && self.peek() != '\0' {
+        while self.peek() != b'\n' && self.peek() != b'\0' {
             self.advance();
         }
     }
@@ -66,13 +66,13 @@ impl Lexer {
         let col = self.col;
         let start = self.pos;
 
-        if self.peek() == '0' && (self.peek_next() == 'x' || self.peek_next() == 'X') {
+        if self.peek() == b'0' && matches!(self.peek_next(), b'x' | b'X') {
             self.advance();
             self.advance();
             while self.peek().is_ascii_hexdigit() {
                 self.advance();
             }
-            let s: String = self.source[start..self.pos].iter().collect();
+            let s = std::str::from_utf8(&self.source[start..self.pos]).expect("invalid hex literal");
             match u8::from_str_radix(&s[2..], 16) {
                 Ok(n) => return Token::new(TokenKind::ByteLit(n), line, col),
                 Err(_) => {
@@ -90,17 +90,18 @@ impl Lexer {
             self.advance();
         }
 
-        if self.peek() == '.' && self.peek_next().is_ascii_digit() {
+        if self.peek() == b'.' && self.peek_next().is_ascii_digit() {
             self.advance();
             while self.peek().is_ascii_digit() {
                 self.advance();
             }
-            let s: String = self.source[start..self.pos].iter().collect();
+            let s =
+                std::str::from_utf8(&self.source[start..self.pos]).expect("invalid float literal");
             let f: f64 = s.parse().expect("invalid float literal");
             return Token::new(TokenKind::FloatLit(f), line, col);
         }
 
-        let s: String = self.source[start..self.pos].iter().collect();
+        let s = std::str::from_utf8(&self.source[start..self.pos]).expect("invalid int literal");
         let n: i64 = s.parse().expect("invalid int literal");
         Token::new(TokenKind::IntLit(n), line, col)
     }
@@ -108,26 +109,27 @@ impl Lexer {
     fn lex_string(&mut self) -> Token {
         let line = self.line;
         let col = self.col;
-        self.advance(); // opening '"'
-        let mut s = String::new();
+        self.advance();
+        let mut bytes = Vec::new();
 
-        while self.peek() != '"' && self.peek() != '\0' {
-            if self.peek() == '\\' {
+        while self.peek() != b'"' && self.peek() != b'\0' {
+            if self.peek() == b'\\' {
                 self.advance();
                 let escaped = match self.advance() {
-                    'n' => '\n',
-                    't' => '\t',
-                    '"' => '"',
-                    '\\' => '\\',
+                    b'n' => b'\n',
+                    b't' => b'\t',
+                    b'"' => b'"',
+                    b'\\' => b'\\',
                     c => c,
                 };
-                s.push(escaped);
+                bytes.push(escaped);
             } else {
-                s.push(self.advance());
+                bytes.push(self.advance());
             }
         }
 
-        self.advance(); // closing '"'
+        self.advance();
+        let s = String::from_utf8(bytes).expect("invalid UTF-8 in string literal");
         Token::new(TokenKind::StrLit(s), line, col)
     }
 
@@ -136,11 +138,13 @@ impl Lexer {
         let col = self.col;
         let start = self.pos;
 
-        while self.peek().is_alphanumeric() || self.peek() == '_' {
+        while self.peek().is_ascii_alphanumeric() || self.peek() == b'_' {
             self.advance();
         }
 
-        let word: String = self.source[start..self.pos].iter().collect();
+        let word = std::str::from_utf8(&self.source[start..self.pos])
+            .expect("invalid identifier")
+            .to_owned();
 
         let kind = match word.as_str() {
             "launch" => TokenKind::Launch,
@@ -184,7 +188,7 @@ impl Lexer {
     fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
-        if self.peek() == '/' && self.peek_next() == '/' {
+        if self.peek() == b'/' && self.peek_next() == b'/' {
             self.advance();
             self.advance();
             self.skip_comment();
@@ -195,7 +199,7 @@ impl Lexer {
         let col = self.col;
         let c = self.peek();
 
-        if c == '\0' {
+        if c == b'\0' {
             return Token::new(TokenKind::Eof, line, col);
         }
 
@@ -203,65 +207,65 @@ impl Lexer {
             return self.lex_number();
         }
 
-        if c == '"' {
+        if c == b'"' {
             return self.lex_string();
         }
 
-        if c.is_alphabetic() || c == '_' {
+        if c.is_ascii_alphabetic() || c == b'_' {
             return self.lex_ident_or_keyword();
         }
 
         self.advance();
 
         let kind = match c {
-            '+' => match self.peek() {
-                '=' => {
+            b'+' => match self.peek() {
+                b'=' => {
                     self.advance();
                     TokenKind::PlusAssign
                 }
                 _ => TokenKind::Plus,
             },
-            '-' => match self.peek() {
-                '=' => {
+            b'-' => match self.peek() {
+                b'=' => {
                     self.advance();
                     TokenKind::MinusAssign
                 }
                 _ => TokenKind::Minus,
             },
-            '*' => match self.peek() {
-                '=' => {
+            b'*' => match self.peek() {
+                b'=' => {
                     self.advance();
                     TokenKind::MulAssign
                 }
                 _ => TokenKind::Star,
             },
-            '/' => match self.peek() {
-                '=' => {
+            b'/' => match self.peek() {
+                b'=' => {
                     self.advance();
                     TokenKind::DivAssign
                 }
                 _ => TokenKind::Slash,
             },
-            '%' => match self.peek() {
-                '=' => {
+            b'%' => match self.peek() {
+                b'=' => {
                     self.advance();
                     TokenKind::ModAssign
                 }
                 _ => TokenKind::Percent,
             },
-            '=' => match self.peek() {
-                '=' => {
+            b'=' => match self.peek() {
+                b'=' => {
                     self.advance();
                     TokenKind::Eq
                 }
-                '>' => {
+                b'>' => {
                     self.advance();
                     TokenKind::FatArrow
                 }
                 _ => TokenKind::Assign,
             },
-            '!' => match self.peek() {
-                '=' => {
+            b'!' => match self.peek() {
+                b'=' => {
                     self.advance();
                     TokenKind::NotEq
                 }
@@ -274,25 +278,25 @@ impl Lexer {
                     return self.next_token();
                 }
             },
-            '<' => match self.peek() {
-                '=' => {
+            b'<' => match self.peek() {
+                b'=' => {
                     self.advance();
                     TokenKind::LtEq
                 }
                 _ => TokenKind::Lt,
             },
-            '>' => match self.peek() {
-                '=' => {
+            b'>' => match self.peek() {
+                b'=' => {
                     self.advance();
                     TokenKind::GtEq
                 }
                 _ => TokenKind::Gt,
             },
-            '.' => match self.peek() {
-                '.' => {
+            b'.' => match self.peek() {
+                b'.' => {
                     self.advance();
                     match self.peek() {
-                        '=' => {
+                        b'=' => {
                             self.advance();
                             TokenKind::DotDotEq
                         }
@@ -308,19 +312,19 @@ impl Lexer {
                     return self.next_token();
                 }
             },
-            '{' => TokenKind::LBrace,
-            '}' => TokenKind::RBrace,
-            '(' => TokenKind::LParen,
-            ')' => TokenKind::RParen,
-            '[' => TokenKind::LBracket,
-            ']' => TokenKind::RBracket,
-            ',' => TokenKind::Comma,
-            ':' => TokenKind::Colon,
+            b'{' => TokenKind::LBrace,
+            b'}' => TokenKind::RBrace,
+            b'(' => TokenKind::LParen,
+            b')' => TokenKind::RParen,
+            b'[' => TokenKind::LBracket,
+            b']' => TokenKind::RBracket,
+            b',' => TokenKind::Comma,
+            b':' => TokenKind::Colon,
             _ => {
                 self.errors.push(LexError {
                     line,
                     col,
-                    msg: format!("unexpected character '{}'", c),
+                    msg: format!("unexpected character '{}'", c as char),
                 });
                 return self.next_token();
             }
