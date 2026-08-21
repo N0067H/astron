@@ -75,7 +75,7 @@ fn main() {
     }
 
     let interp = interpreter::Interpreter::new(&loaded.program);
-    match interp.run(&loaded.program, &target) {
+    match interp.run(&target) {
         Ok(code) => std::process::exit(code),
         Err(error) => {
             let source_path = loaded

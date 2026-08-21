@@ -1,16 +1,20 @@
 use crate::ast::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
     Float(f64),
-    Str(String),
+    Str(Rc<String>),
     Bool(bool),
     Byte(u8),
-    Array(Vec<Value>),
-    Enum { enum_name: String, variant: String },
+    Array(Rc<Vec<Value>>),
+    Enum {
+        enum_name: Rc<String>,
+        variant: Rc<String>,
+    },
     Void,
 }
 
@@ -25,7 +29,7 @@ impl Value {
                     f.to_string()
                 }
             }
-            Value::Str(s) => s.clone(),
+            Value::Str(s) => s.as_ref().clone(),
             Value::Bool(b) => b.to_string(),
             Value::Byte(b) => format!("0x{:02X}", b),
             Value::Enum { enum_name, variant } => format!("{}.{}", enum_name, variant),
@@ -78,35 +82,61 @@ enum Signal {
 }
 
 struct Env {
-    scopes: Vec<HashMap<String, Value>>,
+    scopes: Vec<Vec<usize>>,
+    symbols: HashMap<String, usize>,
+    values: Vec<Vec<Value>>,
 }
 
 impl Env {
     fn new() -> Self {
         Env {
-            scopes: vec![HashMap::new()],
+            scopes: vec![Vec::new()],
+            symbols: HashMap::new(),
+            values: Vec::new(),
         }
     }
 
     fn push_scope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.scopes.push(Vec::new());
     }
 
     fn pop_scope(&mut self) {
-        self.scopes.pop();
+        let names = self.scopes.pop().expect("scope stack is never empty");
+        for symbol in names {
+            if let Some(stack) = self.values.get_mut(symbol) {
+                stack.pop();
+            }
+        }
     }
 
-    fn define(&mut self, name: String, val: Value) {
-        self.scopes.last_mut().expect("scope stack is never empty").insert(name, val);
+    fn symbol(&self, name: &str) -> Option<usize> {
+        self.symbols.get(name).copied()
+    }
+
+    fn intern(&mut self, name: &str) -> usize {
+        if let Some(symbol) = self.symbol(name) {
+            return symbol;
+        }
+
+        let symbol = self.values.len();
+        self.symbols.insert(name.to_owned(), symbol);
+        self.values.push(Vec::new());
+        symbol
+    }
+
+    fn define(&mut self, name: &str, val: Value) {
+        let symbol = self.intern(name);
+        self.scopes
+            .last_mut()
+            .expect("scope stack is never empty")
+            .push(symbol);
+        self.values[symbol].push(val);
     }
 
     fn lookup(&self, name: &str) -> Option<&Value> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(val) = scope.get(name) {
-                return Some(val);
-            }
-        }
-        None
+        self.symbol(name)
+            .and_then(|symbol| self.values.get(symbol))
+            .and_then(|stack| stack.last())
     }
 
     fn get(&self, name: &str, span: Span) -> Result<Value, RuntimeError> {
@@ -116,10 +146,26 @@ impl Env {
     }
 
     fn set(&mut self, name: &str, val: Value, span: Span) -> Result<(), RuntimeError> {
-        for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(name) {
-                scope.insert(name.to_string(), val);
-                return Ok(());
+        if let Some(symbol) = self.symbol(name) {
+            if let Some(stack) = self.values.get_mut(symbol) {
+                if let Some(slot) = stack.last_mut() {
+                    *slot = val;
+                    return Ok(());
+                }
+            }
+        }
+        Err(RuntimeError::new(
+            span,
+            format!("undefined variable '{}'", name),
+        ))
+    }
+
+    fn get_mut(&mut self, name: &str, span: Span) -> Result<&mut Value, RuntimeError> {
+        if let Some(symbol) = self.symbol(name) {
+            if let Some(stack) = self.values.get_mut(symbol) {
+            if let Some(slot) = stack.last_mut() {
+                    return Ok(slot);
+                }
             }
         }
         Err(RuntimeError::new(
@@ -129,45 +175,48 @@ impl Env {
     }
 }
 
-pub struct Interpreter {
-    functions: HashMap<String, (Vec<Param>, Vec<Stmt>)>,
-    enum_variants: HashMap<String, String>,
+pub struct Interpreter<'a> {
+    program: &'a Program,
+    functions: HashMap<&'a str, usize>,
+    enum_variants: HashMap<&'a str, &'a str>,
 }
 
-impl Interpreter {
-    pub fn new(program: &Program) -> Self {
+impl<'a> Interpreter<'a> {
+    pub fn new(program: &'a Program) -> Self {
         let mut functions = HashMap::new();
         let mut enum_variants = HashMap::new();
-        for item in &program.items {
+        for (index, item) in program.items.iter().enumerate() {
             match item {
                 Item::Stage {
                     name, params, body, ..
                 } => {
-                    functions.insert(name.clone(), (params.clone(), body.clone()));
+                    let _ = (params, body);
+                    functions.insert(name.as_str(), index);
                 }
                 Item::Enum { name, variants } => {
                     for variant in variants {
-                        enum_variants.insert(variant.name.clone(), name.clone());
+                        enum_variants.insert(variant.name.as_str(), name.as_str());
                     }
                 }
                 Item::Launch { .. } => {}
             }
         }
         Interpreter {
+            program,
             functions,
             enum_variants,
         }
     }
 
-    pub fn run(&self, program: &Program, target: &str) -> Result<i32, RuntimeError> {
+    pub fn run(&self, target: &str) -> Result<i32, RuntimeError> {
         let mut env = Env::new();
-        match self.exec_stmts(&program.ignite_body, &mut env)? {
+        match self.exec_stmts(&self.program.ignite_body, &mut env)? {
             Some(Signal::Return(Value::Int(code))) => return Ok(code as i32),
             Some(Signal::Abort) => return Ok(1),
             Some(Signal::Return(_)) | Some(Signal::Break) | Some(Signal::Continue) | None => {}
         }
 
-        for item in &program.items {
+        for item in &self.program.items {
             if let Item::Launch { name, body } = item {
                 if name == target {
                     return match self.exec_stmts(body, &mut env)? {
@@ -207,7 +256,7 @@ impl Interpreter {
         match &stmt.node {
             StmtKind::Let { name, init, .. } => {
                 let val = self.eval_expr(init, env)?;
-                env.define(name.clone(), val);
+                env.define(name, val);
                 Ok(None)
             }
             StmtKind::Assign { target, op, value } => {
@@ -225,31 +274,35 @@ impl Interpreter {
                     AssignTarget::Index { name, index } => {
                         let idx = self.expect_index_value(&self.eval_expr(index, env)?, index.span)?;
                         let rhs = self.eval_expr(value, env)?;
-                        let current = env.get(name, stmt.span)?;
-                        let Value::Array(mut elems) = current else {
-                            return Err(RuntimeError::new(
-                                stmt.span,
-                                format!("cannot index into {}", current.kind_name()),
-                            ));
-                        };
-                        if idx >= elems.len() {
-                            return Err(RuntimeError::new(
-                                index.span,
-                                format!(
-                                    "array index {} out of bounds for '{}' with length {}",
-                                    idx,
-                                    name,
-                                    elems.len()
-                                ),
-                            ));
+                        let current = env.get_mut(name, stmt.span)?;
+                        match current {
+                            Value::Array(elems) => {
+                                let elems = Rc::make_mut(elems);
+                                if idx >= elems.len() {
+                                    return Err(RuntimeError::new(
+                                        index.span,
+                                        format!(
+                                            "array index {} out of bounds for '{}' with length {}",
+                                            idx,
+                                            name,
+                                            elems.len()
+                                        ),
+                                    ));
+                                }
+                                let new_val = if matches!(op, AssignOp::Assign) {
+                                    rhs
+                                } else {
+                                    apply_op(op, elems[idx].clone(), rhs, stmt.span)?
+                                };
+                                elems[idx] = new_val;
+                            }
+                            other => {
+                                return Err(RuntimeError::new(
+                                    stmt.span,
+                                    format!("cannot index into {}", other.kind_name()),
+                                ));
+                            }
                         }
-                        let new_val = if matches!(op, AssignOp::Assign) {
-                            rhs
-                        } else {
-                            apply_op(op, elems[idx].clone(), rhs, stmt.span)?
-                        };
-                        elems[idx] = new_val;
-                        env.set(name, Value::Array(elems), stmt.span)?;
                     }
                 }
                 Ok(None)
@@ -314,7 +367,7 @@ impl Interpreter {
                 };
                 'spin: for i in start..end {
                     env.push_scope();
-                    env.define(var.clone(), Value::Int(i));
+                    env.define(var, Value::Int(i));
                     let sig = self.exec_stmts(body, env)?;
                     env.pop_scope();
                     match sig {
@@ -363,7 +416,7 @@ impl Interpreter {
         match &expr.node {
             ExprKind::IntLit(n) => Ok(Value::Int(*n)),
             ExprKind::FloatLit(f) => Ok(Value::Float(*f)),
-            ExprKind::StrLit(s) => Ok(Value::Str(s.clone())),
+            ExprKind::StrLit(s) => Ok(Value::Str(Rc::new(s.clone()))),
             ExprKind::BoolLit(b) => Ok(Value::Bool(*b)),
             ExprKind::ByteLit(b) => Ok(Value::Byte(*b)),
             ExprKind::Air => Ok(Value::Void),
@@ -371,10 +424,10 @@ impl Interpreter {
                 if let Some(value) = env.lookup(name) {
                     return Ok(value.clone());
                 }
-                if let Some(enum_name) = self.enum_variants.get(name) {
+                if let Some(enum_name) = self.enum_variants.get(name.as_str()) {
                     return Ok(Value::Enum {
-                        enum_name: enum_name.clone(),
-                        variant: name.clone(),
+                        enum_name: Rc::new((*enum_name).to_owned()),
+                        variant: Rc::new(name.clone()),
                     });
                 }
                 Err(RuntimeError::new(
@@ -442,12 +495,12 @@ impl Interpreter {
                     )),
                 }
             }
-            ExprKind::ArrayLit(elems) => Ok(Value::Array(
+            ExprKind::ArrayLit(elems) => Ok(Value::Array(Rc::new(
                 elems
                     .iter()
                     .map(|elem| self.eval_expr(elem, env))
                     .collect::<Result<Vec<_>, _>>()?,
-            )),
+            ))),
             ExprKind::Range { .. } => Err(RuntimeError::new(
                 expr.span,
                 "range expression is only allowed in spin",
@@ -510,12 +563,15 @@ impl Interpreter {
                     format!("'to_str' expects 1 argument, got {}", args.len()),
                 ));
             }
-            return Ok(Value::Str(args[0].display()));
+            return Ok(Value::Str(Rc::new(args[0].display())));
         }
 
-        let (params, body) = self.functions.get(name).ok_or_else(|| {
+        let function_index = self.functions.get(name).copied().ok_or_else(|| {
             RuntimeError::new(span, format!("undefined function '{}'", name))
         })?;
+        let Item::Stage { params, body, .. } = &self.program.items[function_index] else {
+            unreachable!("function map should only contain stage items");
+        };
         if args.len() != params.len() {
             return Err(RuntimeError::new(
                 span,
@@ -530,7 +586,7 @@ impl Interpreter {
 
         let mut env = Env::new();
         for (param, val) in params.iter().zip(args) {
-            env.define(param.name.clone(), val);
+            env.define(&param.name, val);
         }
 
         match self.exec_stmts(body, &mut env)? {
@@ -579,7 +635,7 @@ fn eval_binary(op: &BinOp, lhs: Value, rhs: Value, span: Span) -> Result<Value, 
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 + b)),
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + b as f64)),
-            (Value::Str(a), Value::Str(b)) => Ok(Value::Str(a + &b)),
+            (Value::Str(a), Value::Str(b)) => Ok(Value::Str(Rc::new(format!("{}{}", a, b)))),
             (l, r) => Err(binary_type_error(span, "+", &l, &r)),
         },
         BinOp::Sub => match (lhs, rhs) {
