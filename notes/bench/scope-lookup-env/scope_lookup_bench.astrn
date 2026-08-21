@@ -1,0 +1,32 @@
+stage hot(limit: int) lands int {
+    fuel acc: int = 0
+    fuel i: int = 0
+
+    burn i < limit {
+        i += 1
+
+        scan true {
+            payload a: int = i
+            scan true {
+                payload b: int = a + i
+                scan true {
+                    payload c: int = b + a
+                    scan true {
+                        payload d: int = c + b
+                        scan true {
+                            payload e: int = d + c
+                            acc += a + b + c + d + e + i
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    land acc
+}
+
+launch main {
+    payload result: int = fire hot(200000)
+    land 0
+}
