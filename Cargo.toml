@@ -1,6 +1,12 @@
 [package]
 name = "astron"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2024"
+description = "A small space-themed programming language with a CLI interpreter"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/n0067h/astron"
+keywords = ["language", "interpreter", "cli", "space"]
+categories = ["command-line-utilities", "compilers"]
 
 [dependencies]

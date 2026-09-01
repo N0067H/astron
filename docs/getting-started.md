@@ -15,6 +15,8 @@ The binary is at `target/release/astron`.
 ```sh
 astron <file.astrn>
 astron <file.astrn> --launch <name>
+astron --help
+astron --version
 ```
 
 `--launch` selects which `launch` block to run. Defaults to `main`.

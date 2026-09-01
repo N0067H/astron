@@ -28,24 +28,15 @@ impl LoadError {
     }
 }
 
+struct Cli {
+    path: PathBuf,
+    target: String,
+}
+
 fn main() {
-    let mut args = env::args().skip(1);
-    let path = args.next().unwrap_or_else(|| {
-        eprintln!("usage: astron <file.astrn> [--launch <name>]");
-        std::process::exit(1);
-    });
+    let cli = parse_cli(env::args().skip(1).collect());
 
-    let mut target = "main".to_string();
-    while let Some(arg) = args.next() {
-        if arg == "--launch" {
-            target = args.next().unwrap_or_else(|| {
-                eprintln!("error: --launch requires a name");
-                std::process::exit(1);
-            });
-        }
-    }
-
-    let loaded = match load_program(Path::new(&path)) {
+    let loaded = match load_program(&cli.path) {
         Ok(program) => program,
         Err(errors) => {
             for e in errors {
@@ -62,7 +53,7 @@ fn main() {
                 .sources
                 .get(e.span.file)
                 .map(|path| path.as_path())
-                .unwrap_or_else(|| Path::new(&path));
+                .unwrap_or_else(|| cli.path.as_path());
             eprintln!(
                 "{}:{}:{}: {}",
                 source_path.display(),
@@ -75,14 +66,14 @@ fn main() {
     }
 
     let interp = interpreter::Interpreter::new(&loaded.program);
-    match interp.run(&target) {
+    match interp.run(&cli.target) {
         Ok(code) => std::process::exit(code),
         Err(error) => {
             let source_path = loaded
                 .sources
                 .get(error.span.file)
                 .map(|path| path.as_path())
-                .unwrap_or_else(|| Path::new(&path));
+                .unwrap_or_else(|| cli.path.as_path());
             eprintln!(
                 "{}:{}:{}: runtime error: {}",
                 source_path.display(),
@@ -93,6 +84,74 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+fn parse_cli(args: Vec<String>) -> Cli {
+    if args.is_empty() {
+        eprintln!("{}", usage());
+        std::process::exit(1);
+    }
+
+    let mut path = None;
+    let mut target = String::from("main");
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--help" => {
+                println!("{}", usage());
+                std::process::exit(0);
+            }
+            "--version" => {
+                println!("{}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
+            "--launch" => {
+                index += 1;
+                let Some(name) = args.get(index) else {
+                    eprintln!("error: --launch requires a name\n\n{}", usage());
+                    std::process::exit(1);
+                };
+                target = name.clone();
+            }
+            arg if arg.starts_with("--") => {
+                eprintln!("error: unknown option '{arg}'\n\n{}", usage());
+                std::process::exit(1);
+            }
+            arg => {
+                if path.is_some() {
+                    eprintln!("error: unexpected positional argument '{arg}'\n\n{}", usage());
+                    std::process::exit(1);
+                }
+                path = Some(PathBuf::from(arg));
+            }
+        }
+        index += 1;
+    }
+
+    let Some(path) = path else {
+        eprintln!("error: missing input file\n\n{}", usage());
+        std::process::exit(1);
+    };
+
+    Cli { path, target }
+}
+
+fn usage() -> String {
+    format!(
+        "\
+Astron {}
+
+Usage:
+  astron <file.astrn> [--launch <name>]
+  astron --help
+  astron --version
+
+Options:
+  --launch <name>  Select which launch block to run
+  --help           Show this help message
+  --version        Show the Astron version",
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 struct LoadedProgram {
