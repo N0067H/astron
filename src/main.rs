@@ -1,9 +1,11 @@
-use astron::{frontend, interpreter};
+use astron::{backend, frontend, interpreter};
 use std::{env, path::PathBuf};
 
 struct Cli {
     path: PathBuf,
     target: String,
+    build: bool,
+    output: Option<PathBuf>,
 }
 
 fn main() {
@@ -18,6 +20,18 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    if cli.build {
+        let output = cli
+            .output
+            .unwrap_or_else(|| cli.path.with_extension(std::env::consts::EXE_EXTENSION));
+        if let Err(error) = backend::build(&loaded, &cli.target, &output) {
+            eprintln!("build error: {error}");
+            std::process::exit(1);
+        }
+        println!("Built {}", output.display());
+        return;
+    }
 
     let interp = interpreter::Interpreter::new(loaded.program());
     match interp.run(&cli.target) {
@@ -42,9 +56,11 @@ fn parse_cli(args: Vec<String>) -> Cli {
         std::process::exit(1);
     }
 
+    let build = args.first().is_some_and(|arg| arg == "build");
+    let mut output = None;
     let mut path = None;
     let mut target = String::from("main");
-    let mut index = 0;
+    let mut index = usize::from(build);
     while index < args.len() {
         match args[index].as_str() {
             "--help" => {
@@ -54,6 +70,14 @@ fn parse_cli(args: Vec<String>) -> Cli {
             "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
+            }
+            "-o" | "--output" if build => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: --output requires a path\n\n{}", usage());
+                    std::process::exit(1);
+                };
+                output = Some(PathBuf::from(value));
             }
             "--launch" => {
                 index += 1;
@@ -86,7 +110,12 @@ fn parse_cli(args: Vec<String>) -> Cli {
         std::process::exit(1);
     };
 
-    Cli { path, target }
+    Cli {
+        path,
+        target,
+        build,
+        output,
+    }
 }
 
 fn usage() -> String {
@@ -96,10 +125,12 @@ Astron {}
 
 Usage:
   astron <file.astrn> [--launch <name>]
+  astron build <file.astrn> [--launch <name>] [-o <path>]
   astron --help
   astron --version
 
 Options:
+  -o, --output <path>  Native executable path (build only)
   --launch <name>  Select which launch block to run
   --help           Show this help message
   --version        Show the Astron version",
