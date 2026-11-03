@@ -6,6 +6,8 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+mod scalar;
+
 pub fn emit_ir(checked: &CheckedProgram, target: &str) -> Result<String, String> {
     let program = checked.program();
     if let Some(stmt) = program.ignite_body.first() {
@@ -17,25 +19,12 @@ pub fn emit_ir(checked: &CheckedProgram, target: &str) -> Result<String, String>
         _ => None,
     });
     let body = body.ok_or_else(|| format!("no 'launch {target}' found"))?;
-    let mut code = 0;
-    if let Some(stmt) = body.first() {
-        let StmtKind::Land(Some(expr)) = &stmt.node else {
-            return Err(unsupported(checked, stmt.span));
-        };
-        let ExprKind::IntLit(value) = expr.node else {
-            return Err(unsupported(checked, expr.span));
-        };
-        code = value as i32;
-    }
-
-    Ok(format!(
-        "define i32 @main() {{\nentry:\n  ret i32 {code}\n}}\n"
-    ))
+    scalar::compile(checked, body)
 }
 
 fn unsupported(checked: &CheckedProgram, span: Span) -> String {
     format!(
-        "{}:{}:{}: unsupported native syntax; currently only 'land <integer literal>' is supported",
+        "{}:{}:{}: unsupported native syntax; expected scalar declarations, assignments, expressions, or land",
         checked.source_path(span).display(),
         span.line,
         span.col
@@ -69,13 +58,12 @@ pub fn build(checked: &CheckedProgram, target: &str, output: &Path) -> Result<()
             .arg(&object_path),
         "LLVM object generation",
     )?;
-    run_tool(
-        Command::new("clang")
-            .arg(&object_path)
-            .arg("-o")
-            .arg(&executable),
-        "native linking",
-    )?;
+    let mut linker = Command::new("clang");
+    linker.arg(&object_path).arg("-o").arg(&executable);
+    if cfg!(unix) {
+        linker.arg("-lm");
+    }
+    run_tool(&mut linker, "native linking")?;
     fs::copy(executable, output)
         .map_err(|error| format!("cannot write executable '{}': {error}", output.display()))?;
     Ok(())

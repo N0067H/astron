@@ -1,0 +1,7 @@
+launch main {
+    payload initial: int = 6
+    fuel result: int = initial * 8
+    result -= 9
+    result += 12 / 4
+    land result
+}
