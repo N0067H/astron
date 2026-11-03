@@ -259,52 +259,7 @@ impl<'a> Interpreter<'a> {
                 Ok(None)
             }
             StmtKind::Assign { target, op, value } => {
-                match target {
-                    AssignTarget::Ident(name) => {
-                        let rhs = self.eval_expr(value, env)?;
-                        let new_val = if matches!(op, AssignOp::Assign) {
-                            rhs
-                        } else {
-                            let cur = env.get(name, stmt.span)?;
-                            apply_op(op, cur, rhs, stmt.span)?
-                        };
-                        env.set(name, new_val, stmt.span)?;
-                    }
-                    AssignTarget::Index { name, index } => {
-                        let idx =
-                            self.expect_index_value(&self.eval_expr(index, env)?, index.span)?;
-                        let rhs = self.eval_expr(value, env)?;
-                        let current = env.get_mut(name, stmt.span)?;
-                        match current {
-                            Value::Array(elems) => {
-                                let elems = Rc::make_mut(elems);
-                                if idx >= elems.len() {
-                                    return Err(RuntimeError::new(
-                                        index.span,
-                                        format!(
-                                            "array index {} out of bounds for '{}' with length {}",
-                                            idx,
-                                            name,
-                                            elems.len()
-                                        ),
-                                    ));
-                                }
-                                let new_val = if matches!(op, AssignOp::Assign) {
-                                    rhs
-                                } else {
-                                    apply_op(op, elems[idx].clone(), rhs, stmt.span)?
-                                };
-                                elems[idx] = new_val;
-                            }
-                            other => {
-                                return Err(RuntimeError::new(
-                                    stmt.span,
-                                    format!("cannot index into {}", other.kind_name()),
-                                ));
-                            }
-                        }
-                    }
-                }
+                self.exec_assign(target, op, value, stmt.span, env)?;
                 Ok(None)
             }
             StmtKind::If {
@@ -330,72 +285,9 @@ impl<'a> Interpreter<'a> {
                 }
                 Ok(None)
             }
-            StmtKind::Burn { cond, body } => {
-                loop {
-                    if !self.expect_bool(&self.eval_expr(cond, env)?, cond.span)? {
-                        break;
-                    }
-                    match self.exec_block(body, env)? {
-                        Some(Signal::Break) => break,
-                        Some(Signal::Continue) => continue,
-                        sig @ Some(Signal::Return(_)) | sig @ Some(Signal::Abort) => {
-                            return Ok(sig);
-                        }
-                        None => {}
-                    }
-                }
-                Ok(None)
-            }
-            StmtKind::Spin { var, range, body } => {
-                let ExprKind::Range {
-                    start,
-                    end,
-                    inclusive,
-                } = &range.node
-                else {
-                    return Err(RuntimeError::new(
-                        range.span,
-                        "spin requires a range expression",
-                    ));
-                };
-                let start = self.expect_int(&self.eval_expr(start, env)?, start.span)?;
-                let end = self.expect_int(&self.eval_expr(end, env)?, end.span)?;
-                let end = if *inclusive {
-                    end.checked_add(1).ok_or_else(|| {
-                        RuntimeError::new(range.span, "inclusive range end overflowed")
-                    })?
-                } else {
-                    end
-                };
-                'spin: for i in start..end {
-                    env.push_scope();
-                    env.define(var, Value::Int(i));
-                    let sig = self.exec_stmts(body, env)?;
-                    env.pop_scope();
-                    match sig {
-                        Some(Signal::Break) => break 'spin,
-                        Some(Signal::Continue) => continue 'spin,
-                        sig @ Some(Signal::Return(_)) | sig @ Some(Signal::Abort) => {
-                            return Ok(sig);
-                        }
-                        None => {}
-                    }
-                }
-                Ok(None)
-            }
-            StmtKind::Orbit { body } => {
-                loop {
-                    match self.exec_block(body, env)? {
-                        Some(Signal::Break) => break,
-                        Some(Signal::Continue) => continue,
-                        sig @ Some(Signal::Return(_)) | sig @ Some(Signal::Abort) => {
-                            return Ok(sig);
-                        }
-                        None => {}
-                    }
-                }
-                Ok(None)
-            }
+            StmtKind::Burn { cond, body } => self.exec_burn(cond, body, env),
+            StmtKind::Spin { var, range, body } => self.exec_spin(var, range, body, env),
+            StmtKind::Orbit { body } => self.exec_orbit(body, env),
             StmtKind::Fire { name, args } => {
                 let values = args
                     .iter()
@@ -415,6 +307,157 @@ impl<'a> Interpreter<'a> {
             StmtKind::Pass => Ok(Some(Signal::Continue)),
             StmtKind::Abort => Ok(Some(Signal::Abort)),
             StmtKind::Error => unreachable!("parse error node reached interpreter"),
+        }
+    }
+
+    fn exec_assign(
+        &self,
+        target: &AssignTarget,
+        op: &AssignOp,
+        value: &Expr,
+        span: Span,
+        env: &mut Env,
+    ) -> Result<(), RuntimeError> {
+        match target {
+            AssignTarget::Ident(name) => self.assign_ident(name, op, value, span, env),
+            AssignTarget::Index { name, index } => {
+                self.assign_index(name, index, op, value, span, env)
+            }
+        }
+    }
+
+    fn assign_ident(
+        &self,
+        name: &str,
+        op: &AssignOp,
+        value: &Expr,
+        span: Span,
+        env: &mut Env,
+    ) -> Result<(), RuntimeError> {
+        let rhs = self.eval_expr(value, env)?;
+        let new_val = if matches!(op, AssignOp::Assign) {
+            rhs
+        } else {
+            let cur = env.get(name, span)?;
+            apply_op(op, cur, rhs, span)?
+        };
+        env.set(name, new_val, span)
+    }
+
+    fn assign_index(
+        &self,
+        name: &str,
+        index: &Expr,
+        op: &AssignOp,
+        value: &Expr,
+        span: Span,
+        env: &mut Env,
+    ) -> Result<(), RuntimeError> {
+        let idx = self.expect_index_value(&self.eval_expr(index, env)?, index.span)?;
+        let rhs = self.eval_expr(value, env)?;
+        let current = env.get_mut(name, span)?;
+        let Value::Array(elems) = current else {
+            return Err(RuntimeError::new(
+                span,
+                format!("cannot index into {}", current.kind_name()),
+            ));
+        };
+        let elems = Rc::make_mut(elems);
+        if idx >= elems.len() {
+            return Err(RuntimeError::new(
+                index.span,
+                format!(
+                    "array index {} out of bounds for '{}' with length {}",
+                    idx,
+                    name,
+                    elems.len()
+                ),
+            ));
+        }
+
+        let new_val = if matches!(op, AssignOp::Assign) {
+            rhs
+        } else {
+            apply_op(op, elems[idx].clone(), rhs, span)?
+        };
+        elems[idx] = new_val;
+        Ok(())
+    }
+
+    fn exec_burn(
+        &self,
+        cond: &Expr,
+        body: &[Stmt],
+        env: &mut Env,
+    ) -> Result<Option<Signal>, RuntimeError> {
+        loop {
+            if !self.expect_bool(&self.eval_expr(cond, env)?, cond.span)? {
+                return Ok(None);
+            }
+            match self.exec_block(body, env)? {
+                Some(Signal::Break) => return Ok(None),
+                Some(Signal::Continue) | None => {}
+                signal => return Ok(signal),
+            }
+        }
+    }
+
+    fn exec_spin(
+        &self,
+        var: &str,
+        range: &Expr,
+        body: &[Stmt],
+        env: &mut Env,
+    ) -> Result<Option<Signal>, RuntimeError> {
+        let bounds = self.eval_spin_range(range, env)?;
+        for i in bounds {
+            env.push_scope();
+            env.define(var, Value::Int(i));
+            let sig = self.exec_stmts(body, env)?;
+            env.pop_scope();
+            match sig {
+                Some(Signal::Break) => break,
+                Some(Signal::Continue) | None => {}
+                signal => return Ok(signal),
+            }
+        }
+        Ok(None)
+    }
+
+    fn eval_spin_range(
+        &self,
+        range: &Expr,
+        env: &mut Env,
+    ) -> Result<std::ops::Range<i64>, RuntimeError> {
+        let ExprKind::Range {
+            start,
+            end,
+            inclusive,
+        } = &range.node
+        else {
+            return Err(RuntimeError::new(
+                range.span,
+                "spin requires a range expression",
+            ));
+        };
+        let start = self.expect_int(&self.eval_expr(start, env)?, start.span)?;
+        let end = self.expect_int(&self.eval_expr(end, env)?, end.span)?;
+        let end = if *inclusive {
+            end.checked_add(1)
+                .ok_or_else(|| RuntimeError::new(range.span, "inclusive range end overflowed"))?
+        } else {
+            end
+        };
+        Ok(start..end)
+    }
+
+    fn exec_orbit(&self, body: &[Stmt], env: &mut Env) -> Result<Option<Signal>, RuntimeError> {
+        loop {
+            match self.exec_block(body, env)? {
+                Some(Signal::Break) => return Ok(None),
+                Some(Signal::Continue) | None => {}
+                signal => return Ok(signal),
+            }
         }
     }
 
