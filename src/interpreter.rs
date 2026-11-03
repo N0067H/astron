@@ -146,13 +146,12 @@ impl Env {
     }
 
     fn set(&mut self, name: &str, val: Value, span: Span) -> Result<(), RuntimeError> {
-        if let Some(symbol) = self.symbol(name) {
-            if let Some(stack) = self.values.get_mut(symbol) {
-                if let Some(slot) = stack.last_mut() {
-                    *slot = val;
-                    return Ok(());
-                }
-            }
+        if let Some(symbol) = self.symbol(name)
+            && let Some(stack) = self.values.get_mut(symbol)
+            && let Some(slot) = stack.last_mut()
+        {
+            *slot = val;
+            return Ok(());
         }
         Err(RuntimeError::new(
             span,
@@ -161,12 +160,11 @@ impl Env {
     }
 
     fn get_mut(&mut self, name: &str, span: Span) -> Result<&mut Value, RuntimeError> {
-        if let Some(symbol) = self.symbol(name) {
-            if let Some(stack) = self.values.get_mut(symbol) {
-            if let Some(slot) = stack.last_mut() {
-                    return Ok(slot);
-                }
-            }
+        if let Some(symbol) = self.symbol(name)
+            && let Some(stack) = self.values.get_mut(symbol)
+            && let Some(slot) = stack.last_mut()
+        {
+            return Ok(slot);
         }
         Err(RuntimeError::new(
             span,
@@ -217,16 +215,17 @@ impl<'a> Interpreter<'a> {
         }
 
         for item in &self.program.items {
-            if let Item::Launch { name, body } = item {
-                if name == target {
-                    return match self.exec_stmts(body, &mut env)? {
-                        Some(Signal::Return(Value::Int(code))) => Ok(code as i32),
-                        Some(Signal::Abort) => Ok(1),
-                        Some(Signal::Return(_)) | Some(Signal::Break) | Some(Signal::Continue) | None => {
-                            Ok(0)
-                        }
-                    };
-                }
+            if let Item::Launch { name, body } = item
+                && name == target
+            {
+                return match self.exec_stmts(body, &mut env)? {
+                    Some(Signal::Return(Value::Int(code))) => Ok(code as i32),
+                    Some(Signal::Abort) => Ok(1),
+                    Some(Signal::Return(_))
+                    | Some(Signal::Break)
+                    | Some(Signal::Continue)
+                    | None => Ok(0),
+                };
             }
         }
 
@@ -272,7 +271,8 @@ impl<'a> Interpreter<'a> {
                         env.set(name, new_val, stmt.span)?;
                     }
                     AssignTarget::Index { name, index } => {
-                        let idx = self.expect_index_value(&self.eval_expr(index, env)?, index.span)?;
+                        let idx =
+                            self.expect_index_value(&self.eval_expr(index, env)?, index.span)?;
                         let rhs = self.eval_expr(value, env)?;
                         let current = env.get_mut(name, stmt.span)?;
                         match current {
@@ -338,7 +338,9 @@ impl<'a> Interpreter<'a> {
                     match self.exec_block(body, env)? {
                         Some(Signal::Break) => break,
                         Some(Signal::Continue) => continue,
-                        sig @ Some(Signal::Return(_)) | sig @ Some(Signal::Abort) => return Ok(sig),
+                        sig @ Some(Signal::Return(_)) | sig @ Some(Signal::Abort) => {
+                            return Ok(sig);
+                        }
                         None => {}
                     }
                 }
@@ -373,7 +375,9 @@ impl<'a> Interpreter<'a> {
                     match sig {
                         Some(Signal::Break) => break 'spin,
                         Some(Signal::Continue) => continue 'spin,
-                        sig @ Some(Signal::Return(_)) | sig @ Some(Signal::Abort) => return Ok(sig),
+                        sig @ Some(Signal::Return(_)) | sig @ Some(Signal::Abort) => {
+                            return Ok(sig);
+                        }
                         None => {}
                     }
                 }
@@ -384,7 +388,9 @@ impl<'a> Interpreter<'a> {
                     match self.exec_block(body, env)? {
                         Some(Signal::Break) => break,
                         Some(Signal::Continue) => continue,
-                        sig @ Some(Signal::Return(_)) | sig @ Some(Signal::Abort) => return Ok(sig),
+                        sig @ Some(Signal::Return(_)) | sig @ Some(Signal::Abort) => {
+                            return Ok(sig);
+                        }
                         None => {}
                     }
                 }
@@ -486,7 +492,11 @@ impl<'a> Interpreter<'a> {
                     Value::Array(elems) => elems.get(idx).cloned().ok_or_else(|| {
                         RuntimeError::new(
                             index.span,
-                            format!("array index {} out of bounds with length {}", idx, elems.len()),
+                            format!(
+                                "array index {} out of bounds with length {}",
+                                idx,
+                                elems.len()
+                            ),
                         )
                     }),
                     other => Err(RuntimeError::new(
@@ -566,9 +576,11 @@ impl<'a> Interpreter<'a> {
             return Ok(Value::Str(Rc::new(args[0].display())));
         }
 
-        let function_index = self.functions.get(name).copied().ok_or_else(|| {
-            RuntimeError::new(span, format!("undefined function '{}'", name))
-        })?;
+        let function_index = self
+            .functions
+            .get(name)
+            .copied()
+            .ok_or_else(|| RuntimeError::new(span, format!("undefined function '{}'", name)))?;
         let Item::Stage { params, body, .. } = &self.program.items[function_index] else {
             unreachable!("function map should only contain stage items");
         };
@@ -731,11 +743,7 @@ fn cmp_values(a: &Value, b: &Value, span: Span) -> Result<Ordering, RuntimeError
         (Value::Str(x), Value::Str(y)) => Ok(x.cmp(y)),
         (lhs, rhs) => Err(RuntimeError::new(
             span,
-            format!(
-                "cannot compare {} and {}",
-                lhs.kind_name(),
-                rhs.kind_name()
-            ),
+            format!("cannot compare {} and {}", lhs.kind_name(), rhs.kind_name()),
         )),
     }
 }

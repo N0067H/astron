@@ -127,13 +127,13 @@ impl Checker {
                 init,
             } => {
                 self.check_type(ty, name);
-                if let Some(init_ty) = self.check_expr(init, env) {
-                    if !assignable(ty, &init_ty) {
-                        self.error(
-                            init.span,
-                            format!("type mismatch: declared {:?}, got {:?}", ty, init_ty),
-                        );
-                    }
+                if let Some(init_ty) = self.check_expr(init, env)
+                    && !assignable(ty, &init_ty)
+                {
+                    self.error(
+                        init.span,
+                        format!("type mismatch: declared {:?}, got {:?}", ty, init_ty),
+                    );
                 }
                 env.define(name.clone(), ty.clone(), !mutable);
             }
@@ -155,62 +155,53 @@ impl Checker {
                                     format!("cannot assign to immutable variable '{}'", name),
                                 );
                             }
-                            if let Some(vt) = val_ty {
-                                if !assignable(&var_ty, &vt) {
-                                    self.error(
-                                        span,
-                                        format!(
-                                            "type mismatch: expected {:?}, got {:?}",
-                                            var_ty, vt
-                                        ),
-                                    );
-                                }
+                            if let Some(vt) = val_ty
+                                && !assignable(&var_ty, &vt)
+                            {
+                                self.error(
+                                    span,
+                                    format!("type mismatch: expected {:?}, got {:?}", var_ty, vt),
+                                );
                             }
                         }
                     },
                     AssignTarget::Index { name, index } => {
-                        if let Some(idx_ty) = self.check_expr(index, env) {
-                            if idx_ty != Type::Int {
-                                self.error(
-                                    index.span,
-                                    format!("array index must be int, got {:?}", idx_ty),
-                                );
-                            }
+                        if let Some(idx_ty) = self.check_expr(index, env)
+                            && idx_ty != Type::Int
+                        {
+                            self.error(
+                                index.span,
+                                format!("array index must be int, got {:?}", idx_ty),
+                            );
                         }
                         match env.get(name) {
                             None => self.error(span, format!("undefined variable '{}'", name)),
-                            Some((ty, imm)) => {
-                                let imm = imm;
-                                match ty {
-                                    Type::Array(elem_ty) => {
-                                        let elem_ty = (**elem_ty).clone();
-                                        if imm {
-                                            self.error(
-                                                span,
-                                                format!(
-                                                    "cannot assign to immutable array '{}'",
-                                                    name
-                                                ),
-                                            );
-                                        }
-                                        if let Some(vt) = val_ty {
-                                            if !assignable(&elem_ty, &vt) {
-                                                self.error(
-                                                    span,
-                                                    format!(
-                                                        "type mismatch: expected {:?}, got {:?}",
-                                                        elem_ty, vt
-                                                    ),
-                                                );
-                                            }
-                                        }
+                            Some((ty, imm)) => match ty {
+                                Type::Array(elem_ty) => {
+                                    let elem_ty = (**elem_ty).clone();
+                                    if imm {
+                                        self.error(
+                                            span,
+                                            format!("cannot assign to immutable array '{}'", name),
+                                        );
                                     }
-                                    other => {
-                                        let other = other.clone();
-                                        self.error(span, format!("cannot index into {:?}", other));
+                                    if let Some(vt) = val_ty
+                                        && !assignable(&elem_ty, &vt)
+                                    {
+                                        self.error(
+                                            span,
+                                            format!(
+                                                "type mismatch: expected {:?}, got {:?}",
+                                                elem_ty, vt
+                                            ),
+                                        );
                                     }
                                 }
-                            }
+                                other => {
+                                    let other = other.clone();
+                                    self.error(span, format!("cannot index into {:?}", other));
+                                }
+                            },
                         }
                     }
                 }
@@ -221,10 +212,10 @@ impl Checker {
                 then_block,
                 else_block,
             } => {
-                if let Some(ty) = self.check_expr(cond, env) {
-                    if ty != Type::Flag {
-                        self.error(cond.span, format!("condition must be flag, got {:?}", ty));
-                    }
+                if let Some(ty) = self.check_expr(cond, env)
+                    && ty != Type::Flag
+                {
+                    self.error(cond.span, format!("condition must be flag, got {:?}", ty));
                 }
                 self.check_block(then_block, env, ret);
                 if let Some(else_stmts) = else_block {
@@ -235,31 +226,27 @@ impl Checker {
             StmtKind::Route { subject, arms } => {
                 let subj_ty = self.check_expr(subject, env);
                 for arm in arms {
-                    if let Some(pat_ty) = self.check_expr(&arm.pattern, env) {
-                        if let Some(ref st) = subj_ty {
-                            if !assignable(st, &pat_ty) {
-                                self.error(
-                                    arm.pattern.span,
-                                    format!(
-                                        "pattern type mismatch: expected {:?}, got {:?}",
-                                        st, pat_ty
-                                    ),
-                                );
-                            }
-                        }
+                    if let Some(pat_ty) = self.check_expr(&arm.pattern, env)
+                        && let Some(ref st) = subj_ty
+                        && !assignable(st, &pat_ty)
+                    {
+                        self.error(
+                            arm.pattern.span,
+                            format!("pattern type mismatch: expected {:?}, got {:?}", st, pat_ty),
+                        );
                     }
                     self.check_stmt(&arm.body, env, ret);
                 }
             }
 
             StmtKind::Burn { cond, body } => {
-                if let Some(ty) = self.check_expr(cond, env) {
-                    if ty != Type::Flag {
-                        self.error(
-                            cond.span,
-                            format!("burn condition must be flag, got {:?}", ty),
-                        );
-                    }
+                if let Some(ty) = self.check_expr(cond, env)
+                    && ty != Type::Flag
+                {
+                    self.error(
+                        cond.span,
+                        format!("burn condition must be flag, got {:?}", ty),
+                    );
                 }
                 self.check_block(body, env, ret);
             }
@@ -268,13 +255,13 @@ impl Checker {
                 match &range.node {
                     ExprKind::Range { start, end, .. } => {
                         for bound in [start.as_ref(), end.as_ref()] {
-                            if let Some(ty) = self.check_expr(bound, env) {
-                                if ty != Type::Int {
-                                    self.error(
-                                        bound.span,
-                                        format!("range bound must be int, got {:?}", ty),
-                                    );
-                                }
+                            if let Some(ty) = self.check_expr(bound, env)
+                                && ty != Type::Int
+                            {
+                                self.error(
+                                    bound.span,
+                                    format!("range bound must be int, got {:?}", ty),
+                                );
                             }
                         }
                     }
@@ -301,13 +288,13 @@ impl Checker {
                     }
                 }
                 Some(e) => {
-                    if let Some(ty) = self.check_expr(e, env) {
-                        if !assignable(ret, &ty) {
-                            self.error(
-                                e.span,
-                                format!("return type mismatch: expected {:?}, got {:?}", ret, ty),
-                            );
-                        }
+                    if let Some(ty) = self.check_expr(e, env)
+                        && !assignable(ret, &ty)
+                    {
+                        self.error(
+                            e.span,
+                            format!("return type mismatch: expected {:?}, got {:?}", ret, ty),
+                        );
                     }
                 }
             },
@@ -384,13 +371,13 @@ impl Checker {
 
             ExprKind::Index { array, index } => {
                 let arr_ty = self.check_expr(array, env);
-                if let Some(idx_ty) = self.check_expr(index, env) {
-                    if idx_ty != Type::Int {
-                        self.error(
-                            index.span,
-                            format!("array index must be int, got {:?}", idx_ty),
-                        );
-                    }
+                if let Some(idx_ty) = self.check_expr(index, env)
+                    && idx_ty != Type::Int
+                {
+                    self.error(
+                        index.span,
+                        format!("array index must be int, got {:?}", idx_ty),
+                    );
                 }
                 match arr_ty {
                     Some(Type::Array(elem_ty)) => Some(*elem_ty),
@@ -408,18 +395,17 @@ impl Checker {
                 }
                 let first = self.check_expr(&elems[0], env);
                 for elem in &elems[1..] {
-                    if let Some(et) = self.check_expr(elem, env) {
-                        if let Some(ref ft) = first {
-                            if !assignable(ft, &et) {
-                                self.error(
-                                    elem.span,
-                                    format!(
-                                        "array element type mismatch: expected {:?}, got {:?}",
-                                        ft, et
-                                    ),
-                                );
-                            }
-                        }
+                    if let Some(et) = self.check_expr(elem, env)
+                        && let Some(ref ft) = first
+                        && !assignable(ft, &et)
+                    {
+                        self.error(
+                            elem.span,
+                            format!(
+                                "array element type mismatch: expected {:?}, got {:?}",
+                                ft, et
+                            ),
+                        );
                     }
                 }
                 first.map(|t| Type::Array(Box::new(t)))
@@ -470,13 +456,13 @@ impl Checker {
                     format!("'assert' expects 1 argument, got {}", args.len()),
                 );
             }
-            if let Some(arg_ty) = args.first().and_then(|arg| self.check_expr(arg, env)) {
-                if arg_ty != Type::Flag {
-                    self.error(
-                        args[0].span,
-                        format!("'assert' expects flag, got {:?}", arg_ty),
-                    );
-                }
+            if let Some(arg_ty) = args.first().and_then(|arg| self.check_expr(arg, env))
+                && arg_ty != Type::Flag
+            {
+                self.error(
+                    args[0].span,
+                    format!("'assert' expects flag, got {:?}", arg_ty),
+                );
             }
             return Some(Type::Void);
         }
@@ -513,16 +499,16 @@ impl Checker {
                     );
                 }
                 for (arg, param_ty) in args.iter().zip(param_tys.iter()) {
-                    if let Some(arg_ty) = self.check_expr(arg, env) {
-                        if !assignable(param_ty, &arg_ty) {
-                            self.error(
-                                arg.span,
-                                format!(
-                                    "argument type mismatch: expected {:?}, got {:?}",
-                                    param_ty, arg_ty
-                                ),
-                            );
-                        }
+                    if let Some(arg_ty) = self.check_expr(arg, env)
+                        && !assignable(param_ty, &arg_ty)
+                    {
+                        self.error(
+                            arg.span,
+                            format!(
+                                "argument type mismatch: expected {:?}, got {:?}",
+                                param_ty, arg_ty
+                            ),
+                        );
                     }
                 }
                 Some(ret_ty)

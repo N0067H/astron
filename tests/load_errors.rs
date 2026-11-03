@@ -37,12 +37,14 @@ fn run_program(path: &Path) -> (i32, String, String) {
 
 #[test]
 fn missing_launch_reports_runtime_error() {
-    let (code, stdout, stderr) =
-        run_program(Path::new("exam/01_hello_launches.astrn").as_ref());
+    let (code, stdout, stderr) = run_program(Path::new("exam/01_hello_launches.astrn").as_ref());
 
     assert_eq!(code, 0);
     assert!(stderr.is_empty(), "expected empty stderr, got: {stderr}");
-    assert!(!stdout.is_empty(), "expected example program to produce stdout");
+    assert!(
+        !stdout.is_empty(),
+        "expected example program to produce stdout"
+    );
 
     let output = Command::new(env!("CARGO_BIN_EXE_astron"))
         .args(["exam/01_hello_launches.astrn", "--launch", "missing"])
@@ -124,4 +126,59 @@ fn type_error_reports_source_location() {
     assert_eq!(code, 1);
     assert!(stdout.is_empty(), "expected empty stdout, got: {stdout}");
     assert!(stderr.contains("mismatch.astrn:2:27: type mismatch: declared Int, got Str"));
+}
+
+#[test]
+fn imported_errors_report_the_module_location() {
+    let dir = temp_dir("import-errors");
+    let main = dir.join("main.astrn");
+    let module = dir.join("module.astrn");
+    write_file(&main, "import \"./module.astrn\"\nlaunch main { land 0 }\n");
+
+    for (source, expected) in [
+        (
+            "launch other {\n    payload answer: int = \"wrong\"\n}\n",
+            "module.astrn:2:27: type mismatch",
+        ),
+        (
+            "launch other {\n    payload answer: int =\n    land 0\n}\n",
+            "module.astrn:3:5: unexpected token",
+        ),
+        (
+            "import \"./missing.astrn\"\n",
+            "module.astrn:1:1: cannot resolve import",
+        ),
+    ] {
+        write_file(&module, source);
+        let (code, stdout, stderr) = run_program(&main);
+        assert_eq!(code, 1);
+        assert!(stdout.is_empty());
+        assert!(stderr.contains(expected), "{stderr}");
+    }
+}
+
+#[test]
+fn shared_frontend_returns_checked_program_and_sources() {
+    let dir = temp_dir("frontend");
+    let main = dir.join("main.astrn");
+    let module = dir.join("module.astrn");
+    write_file(
+        &main,
+        "import \"./module.astrn\"\nimport \"./module.astrn\"\nlaunch main { land 0 }\n",
+    );
+    write_file(&module, "stage answer() lands int { land 42 }\n");
+
+    let checked = astron::frontend::check_program(&main).unwrap();
+    assert_eq!(
+        checked.sources(),
+        &[main.canonicalize().unwrap(), module.canonicalize().unwrap()]
+    );
+    assert_eq!(checked.program().items.len(), 2);
+    let astron::ast::Item::Stage { body, .. } = &checked.program().items[0] else {
+        panic!("expected imported stage");
+    };
+    assert_eq!(
+        checked.source_path(body[0].span),
+        module.canonicalize().unwrap()
+    );
 }

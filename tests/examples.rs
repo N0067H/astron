@@ -24,8 +24,16 @@ fn run_case(case: &Case) {
         .code()
         .unwrap_or_else(|| panic!("process terminated by signal for {:?}", case.args));
 
-    assert_eq!(stdout, case.expected_stdout, "stdout mismatch for {:?}", case.args);
-    assert_eq!(code, case.expected_code, "exit code mismatch for {:?}", case.args);
+    assert_eq!(
+        stdout, case.expected_stdout,
+        "stdout mismatch for {:?}",
+        case.args
+    );
+    assert_eq!(
+        code, case.expected_code,
+        "exit code mismatch for {:?}",
+        case.args
+    );
     assert!(
         stderr.is_empty(),
         "expected empty stderr for {:?}, got: {}",

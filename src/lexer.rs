@@ -72,7 +72,8 @@ impl Lexer {
             while self.peek().is_ascii_hexdigit() {
                 self.advance();
             }
-            let s = std::str::from_utf8(&self.source[start..self.pos]).expect("invalid hex literal");
+            let s =
+                std::str::from_utf8(&self.source[start..self.pos]).expect("invalid hex literal");
             match u8::from_str_radix(&s[2..], 16) {
                 Ok(n) => return Token::new(TokenKind::ByteLit(n), line, col),
                 Err(_) => {
