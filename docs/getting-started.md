@@ -57,17 +57,26 @@ Mixed `int`/`float` arithmetic and comparisons follow the interpreter. A
 variable's actual value type is preserved: initializing a `float` variable with
 an integer does not itself convert the value to floating point. `byte` supports
 storage, assignment, and equality; byte arithmetic and ordering, and mixed
-integer/float remainder, fail in the interpreter and are rejected during native
-compilation.
+integer/float remainder, fail in the interpreter and remain unsupported in native programs.
 
-Nonempty `ignite` blocks, control-flow statements, stage calls, strings, arrays,
-and built-ins still report a source-located build error. The Hello World
-example above still requires the interpreter. Native runtime error checks
-(including division by zero) and integer overflow behavior will be addressed
-in the runtime compatibility work; use nonzero divisors and in-range integer
-arithmetic for now.
+Native compilation also supports `scan`/`fallback`, `route`, `burn`,
+`spin` over exclusive or inclusive integer ranges, and `orbit`. `eject` and
+`pass` break and continue loops. Stages support parameters, return values,
+forward calls, and recursion. A stage's variables are isolated from its caller.
+`ignite` runs before the selected launch, and its variables remain available
+in that launch. `abort` ends a launch with code 1; inside a stage it ends that
+call with no value, matching the interpreter.
 
-The build generates textual LLVM IR in a private temporary directory, invokes
-`clang -x ir -c` to produce an object file, then invokes `clang` again to link
-it. Intermediate files are removed after success or failure. Clang must be on
+String literals, string stage parameters and returns, equality, and `log` are
+supported by the control-flow lowering path so existing examples 01, 02, 04,
+05, 06, 08, 09, and 10 can build. Arrays, enums, and other built-ins remain
+unsupported. Native runtime error diagnostics, full floating-point log
+formatting compatibility, and integer overflow behavior remain future work.
+Use nonzero divisors and in-range integer arithmetic for now.
+
+Simple scalar programs generate textual LLVM IR directly. Programs using
+control flow, stages, or ignite first lower to C11 with tagged values that
+preserve runtime scalar types, then Clang generates LLVM IR. Both paths invoke
+`clang -x ir -c` to produce an object file and Clang again to link it.
+Intermediate files are removed after success or failure. Clang must be on
 `PATH`; build errors identify the failing compilation or linking phase.

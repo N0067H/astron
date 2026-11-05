@@ -6,25 +6,26 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+mod control;
 mod scalar;
 
 pub fn emit_ir(checked: &CheckedProgram, target: &str) -> Result<String, String> {
     let program = checked.program();
-    if let Some(stmt) = program.ignite_body.first() {
-        return Err(unsupported(checked, stmt.span));
-    }
 
     let body = program.items.iter().find_map(|item| match item {
         Item::Launch { name, body } if name == target => Some(body),
         _ => None,
     });
     let body = body.ok_or_else(|| format!("no 'launch {target}' found"))?;
+    if control::needed(program, body) {
+        return control::compile(checked, body);
+    }
     scalar::compile(checked, body)
 }
 
 fn unsupported(checked: &CheckedProgram, span: Span) -> String {
     format!(
-        "{}:{}:{}: unsupported native syntax; expected scalar declarations, assignments, expressions, or land",
+        "{}:{}:{}: unsupported native syntax; expected supported scalar expressions, control flow, or stage calls",
         checked.source_path(span).display(),
         span.line,
         span.col

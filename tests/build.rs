@@ -78,7 +78,7 @@ fn build_defaults_to_main_and_input_stem() {
 
 #[test]
 fn build_rejects_unsupported_syntax_and_missing_launch() {
-    let fixture = Fixture::new("launch main { fire log(\"hello\") land 0 }");
+    let fixture = Fixture::new("launch main { fire log([1, 2]) land 0 }");
     let output = fixture
         .command()
         .args(["build", "input.astrn"])
@@ -87,7 +87,7 @@ fn build_rejects_unsupported_syntax_and_missing_launch() {
     assert!(!output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr)
-            .contains("input.astrn:1:15: unsupported native syntax")
+            .contains("input.astrn:1:24: unsupported native syntax")
     );
     let output = fixture
         .command()
@@ -329,4 +329,121 @@ fn native_numeric_and_logical_results_match_interpreter_assertions() {
     ] {
         assert_native_flag(expression);
     }
+}
+
+#[test]
+fn control_flow_stages_and_shared_ignite_match_interpreter() {
+    assert_native_matches(
+        "ignite { fuel shared: int = 2 }
+        stage fact(n: int) lands int {
+            scan n <= 1 { land 1 }
+            land n * fire fact(n - 1)
+        }
+        launch main {
+            fuel sum: int = 0
+            spin i in 0..=5 {
+                scan i == 2 { pass }
+                sum += i
+            }
+            burn shared < 5 { shared += 1 }
+            orbit { sum += shared scan sum > 20 { eject } }
+            route sum { 23 => land fire fact(4) 99 => land 99 }
+            land 42
+        }",
+        24,
+    );
+    assert_native_matches(
+        "stage stop() lands void { abort } launch main { fire stop() land 99 }",
+        99,
+    );
+    assert_native_matches("ignite { land } launch main { land 17 }", 17);
+    assert_native_matches(
+        "stage empty() lands void { land } launch main { fire empty() land 3 }",
+        3,
+    );
+}
+
+#[test]
+fn native_existing_control_examples_match_interpreter() {
+    for source in [
+        include_str!("../exam/01_hello_launches.astrn"),
+        include_str!("../exam/02_navigation_math.astrn"),
+        include_str!("../exam/04_orbit_counter.astrn"),
+        include_str!("../exam/05_route_phases.astrn"),
+        include_str!("../exam/06_countdown_burn.astrn"),
+        include_str!("../exam/09_multi_launch_modes.astrn"),
+        include_str!("../exam/10_signal_strength.astrn"),
+    ] {
+        assert_native_matches(source, 0);
+    }
+}
+
+#[test]
+fn native_abort_example_matches_interpreter() {
+    assert_native_matches(include_str!("../exam/08_abort_sequence.astrn"), 1);
+}
+
+#[test]
+fn native_scopes_ranges_and_numeric_kinds_match_interpreter() {
+    assert_native_matches(
+        "launch main {
+        fuel x: float = 7
+        scan true { x = 9 payload x: int = 100 }
+        x /= 2
+        scan x != 4 { land 99 }
+        spin i in 5..2 { land 98 }
+        spin i in 3..3 { land 97 }
+        spin i in 3..=3 { x += i }
+        scan false and (1 / 0 == 0) { land 96 }
+        route 8 { 1 => land 95 }
+        land 7
+    }",
+        7,
+    );
+}
+
+#[test]
+fn native_stage_calls_preserve_argument_order_and_loop_bounds() {
+    assert_native_matches(
+        "stage mark(n: int) lands int { fire log(n) land n }
+        stage add(a: int, b: int) lands int { land a + b }
+        launch main {
+            fuel sum: int = fire add(fire mark(1), fire mark(2))
+            fuel end: int = 4
+            spin i in 1..end { end = 1 sum += i }
+            land sum
+        }",
+        9,
+    );
+}
+
+#[test]
+fn native_selected_launch_sees_ignite_variables() {
+    let fixture = Fixture::new(
+        "ignite { fuel shared: int = 12 }
+        launch main { land shared }
+        launch alternate { shared += 5 land shared }",
+    );
+    let executable = fixture
+        .0
+        .join(format!("alternate{}", std::env::consts::EXE_SUFFIX));
+    let build = fixture
+        .command()
+        .args(["build", "input.astrn", "--launch", "alternate", "-o"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        build.status.success(),
+        "{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let native = Command::new(executable).output().unwrap();
+    let interpreted = fixture
+        .command()
+        .args(["input.astrn", "--launch", "alternate"])
+        .output()
+        .unwrap();
+    assert_eq!(native.status.code(), Some(17));
+    assert_eq!(native.status.code(), interpreted.status.code());
 }
