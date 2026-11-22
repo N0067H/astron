@@ -8,12 +8,21 @@ pub(super) fn needed(program: &Program, body: &[Stmt]) -> bool {
             .items
             .iter()
             .any(|item| matches!(item, Item::Stage { .. }))
-        || body.iter().any(|stmt| {
-            !matches!(
-                stmt.node,
-                StmtKind::Let { .. } | StmtKind::Assign { .. } | StmtKind::Land(Some(_))
-            )
+        || body.iter().any(|stmt| match &stmt.node {
+            StmtKind::Let { init, .. } => needs_runtime(init),
+            StmtKind::Assign { value, .. } => needs_runtime(value),
+            StmtKind::Land(Some(value)) => needs_runtime(value),
+            _ => true,
         })
+}
+
+fn needs_runtime(expr: &Expr) -> bool {
+    match &expr.node {
+        ExprKind::StrLit(_) | ExprKind::Call { .. } => true,
+        ExprKind::Unary { expr, .. } => needs_runtime(expr),
+        ExprKind::Binary { lhs, rhs, .. } => needs_runtime(lhs) || needs_runtime(rhs),
+        _ => false,
+    }
 }
 
 struct Generator<'a> {
@@ -294,7 +303,7 @@ impl Generator<'_> {
             ExprKind::FloatLit(n) => format!("vf({n:.17e})"),
             ExprKind::BoolLit(b) => format!("vb({})", i32::from(*b)),
             ExprKind::ByteLit(b) => format!("vy({b})"),
-            ExprKind::StrLit(s) => format!("vs({})", c_string(s)),
+            ExprKind::StrLit(s) => format!("vs({}, {})", c_string(s), s.len()),
             ExprKind::Air => "air()".into(),
             ExprKind::Ident(name) => self.lookup(name, expr.span)?,
             ExprKind::Call { name, args } => return self.call(name, args, expr.span),
@@ -343,6 +352,9 @@ impl Generator<'_> {
             .collect::<Result<Vec<_>, _>>()?;
         if name == "log" {
             return Ok(self.log(&values));
+        }
+        if name == "len" && values.len() == 1 {
+            return Ok(self.value(format!("string_len({})", values[0])));
         }
         if !self
             .checked

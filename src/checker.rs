@@ -527,6 +527,7 @@ fn assignable(expected: &Type, got: &Type) -> bool {
 
 fn binary_result(op: &BinOp, l: &Type, r: &Type) -> Option<Type> {
     match op {
+        BinOp::Add if l == &Type::Str && r == &Type::Str => Some(Type::Str),
         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => match (l, r) {
             (Type::Int, Type::Int) => Some(Type::Int),
             (Type::Float, Type::Float) => Some(Type::Float),

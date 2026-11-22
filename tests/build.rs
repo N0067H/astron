@@ -447,3 +447,47 @@ fn native_selected_launch_sees_ignite_variables() {
     assert_eq!(native.status.code(), Some(17));
     assert_eq!(native.status.code(), interpreted.status.code());
 }
+
+#[test]
+fn native_string_operations_and_unicode_lengths_match_interpreter() {
+    assert_native_matches(
+        r#"stage join(left: str, right: str) lands str {
+            land left + right
+        }
+        launch main {
+            fuel text: str = "발사"
+            payload saved: str = text
+            text += " 🚀"
+            payload joined: str = fire join(text, "!")
+            fire log(saved, text, joined, "", fire len(""))
+            scan saved != "발사" { land 90 }
+            scan text == saved { land 91 }
+            scan not ("a" < "aa" and "aa" <= "aa") { land 92 }
+            scan not ("한" > "a" and "한" >= "한") { land 93 }
+            route joined { "발사 🚀!" => fire log("matched") }
+            land fire len(joined)
+        }"#,
+        5,
+    );
+    assert_native_matches(
+        r#"launch main {
+            payload text: str = "é한🚀" + "!"
+            land fire len(text)
+        }"#,
+        5,
+    );
+}
+
+#[test]
+fn native_string_declarations_select_runtime_without_control_flow() {
+    assert_native_matches(
+        r#"launch main {
+            fuel text: str = "hello"
+            payload saved: str = text
+            text += " world"
+            payload same: flag = saved == "hello"
+            land 7
+        }"#,
+        7,
+    );
+}
