@@ -1,6 +1,6 @@
 [package]
 name = "astron"
-version = "1.4.0"
+version = "1.5.0"
 edition = "2024"
 description = "A small space-themed programming language with a CLI interpreter"
 license = "MIT"

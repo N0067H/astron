@@ -67,16 +67,22 @@ forward calls, and recursion. A stage's variables are isolated from its caller.
 in that launch. `abort` ends a launch with code 1; inside a stage it ends that
 call with no value, matching the interpreter.
 
-String literals, string stage parameters and returns, equality, and `log` are
-supported by the control-flow lowering path so existing examples 01, 02, 04,
-05, 06, 08, 09, and 10 can build. Arrays, enums, and other built-ins remain
-unsupported. Native runtime error diagnostics, full floating-point log
-formatting compatibility, and integer overflow behavior remain future work.
+Native compilation supports strings, arrays, enums, and all four built-ins:
+`log`, `len`, `assert`, and `to_str`. Strings support concatenation, comparisons,
+and Unicode scalar value lengths. Arrays support literals, indexing, element
+assignment, compound assignment, and value copies across variables and stage
+calls. Enum values support comparisons, route matching, and display as
+`Enum.Variant`. Arrays display recursively, including nested arrays.
+
+Failed assertions and invalid array indices report source locations and exit
+with code 1. Other native runtime error diagnostics and integer overflow
+behavior remain future work.
 Use nonzero divisors and in-range integer arithmetic for now.
 
 Simple scalar programs generate textual LLVM IR directly. Programs using
-control flow, stages, or ignite first lower to C11 with tagged values that
-preserve runtime scalar types, then Clang generates LLVM IR. Both paths invoke
+strings, arrays, enums, built-ins, control flow, stages, or ignite first lower
+to C11 with tagged values that preserve runtime value types, then Clang
+generates LLVM IR. Both paths invoke
 `clang -x ir -c` to produce an object file and Clang again to link it.
 Intermediate files are removed after success or failure. Clang must be on
 `PATH`; build errors identify the failing compilation or linking phase.

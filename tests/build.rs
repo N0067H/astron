@@ -77,18 +77,8 @@ fn build_defaults_to_main_and_input_stem() {
 }
 
 #[test]
-fn build_rejects_unsupported_syntax_and_missing_launch() {
+fn build_rejects_missing_launch() {
     let fixture = Fixture::new("launch main { fire log([1, 2]) land 0 }");
-    let output = fixture
-        .command()
-        .args(["build", "input.astrn"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("input.astrn:1:24: unsupported native syntax")
-    );
     let output = fixture
         .command()
         .args(["build", "input.astrn", "--launch", "missing"])
@@ -150,6 +140,10 @@ fn build_refuses_to_overwrite_source() {
 
 fn assert_native_matches(source: &str, expected_code: i32) {
     let fixture = Fixture::new(source);
+    assert_fixture_matches(&fixture, expected_code);
+}
+
+fn assert_fixture_matches(fixture: &Fixture, expected_code: i32) {
     let executable = fixture
         .0
         .join(format!("calculation{}", std::env::consts::EXE_SUFFIX));
@@ -490,4 +484,123 @@ fn native_string_declarations_select_runtime_without_control_flow() {
         }"#,
         7,
     );
+}
+
+#[test]
+fn native_runtime_examples_match_interpreter() {
+    for source in [
+        include_str!("../exam/03_system_checklist.astrn"),
+        include_str!("../exam/07_payload_manifest.astrn"),
+        include_str!("../exam/12_enum_phases.astrn"),
+        include_str!("../exam/13_builtin_functions.astrn"),
+    ] {
+        assert_native_matches(source, 0);
+    }
+}
+
+#[test]
+fn native_array_copies_mutations_and_stage_returns_match_interpreter() {
+    assert_native_matches(
+        r#"stage change(values: [int]) lands [int] {
+            fuel local: [int] = values
+            local[0] += 10
+            land local
+        }
+        launch main {
+            fuel values: [int] = [1, 2, 3]
+            payload saved: [int] = values
+            fuel changed: [int] = fire change(values)
+            changed[1] *= 4
+            changed[1] -= 1
+            changed[1] /= 2
+            changed[1] %= 2
+            values[0] = 9
+            values[2] = values[0] + 1
+            fire assert(saved[0] == 1)
+            fire assert(changed[0] == 11 and changed[1] == 1)
+            fire assert(values[0] == 9 and values[2] == 10)
+            fire assert(not (saved == saved))
+            fire log(saved, values, changed, fire len(saved), fire len([]))
+            fuel rows: [[int]] = [[1, 2], [3, 4]]
+            payload snapshot: [[int]] = rows
+            fuel first: [int] = rows[0]
+            first[0] = 99
+            rows[1] = first
+            fire assert(snapshot[1][0] == 3)
+            fire assert(rows[0][0] == 1 and rows[1][0] == 99)
+            fire log(snapshot, rows, fire to_str(rows))
+            land 0
+        }"#,
+        0,
+    );
+}
+
+#[test]
+fn native_enums_shadowing_and_value_formatting_match_interpreter() {
+    assert_native_matches(
+        r#"enum Phase { Ready Flying Done }
+        stage choose(phase: Phase) lands Phase { land phase }
+        launch main {
+            fuel phase: Phase = Ready
+            payload phases: [Phase] = [Ready, Flying, Done]
+            phase = fire choose(phases[1])
+            fire assert(phase == Flying and phase != Done)
+            route phase { Flying => fire log(phase, phases) }
+            scan true {
+                payload Ready: int = 7
+                fire log(Ready)
+            }
+            fire log(Ready, fire to_str(phase))
+            fire log(fire to_str(42), fire to_str(-7), fire to_str(0xAF))
+            fire log(fire to_str(true), fire to_str(false), fire to_str(air))
+            fire log(fire to_str(["a", "b"]), fire to_str([]))
+            fire log(fire to_str(2.5), fire to_str(3.0), fire to_str(-0.0))
+            fire log(fire to_str(0.0000001), fire to_str(1.2345678901234567))
+            fire log(fire to_str(1.0 / 3.0), fire to_str(0.000000000000000123))
+            fire log()
+            land 0
+        }"#,
+        0,
+    );
+}
+
+#[test]
+fn native_arrays_preserve_expression_evaluation_order() {
+    assert_native_matches(
+        r#"stage mark(n: int) lands int { fire log(n) land n }
+        launch main {
+            fuel values: [int] = [fire mark(1), fire mark(2)]
+            values[fire mark(0)] += fire mark(3)
+            fire log(values[fire mark(0)], values)
+            fire assert(values[0] == 4)
+            land 0
+        }"#,
+        0,
+    );
+}
+
+#[test]
+fn native_assertions_and_array_errors_match_interpreter() {
+    for source in [
+        "launch main { fire log(1) fire assert(false) land 0 }",
+        "stage check() lands void { fire assert(false) } launch main { fire check() land 0 }",
+        "launch main { fuel values: [int] = [1] fire log(values[-1]) land 0 }",
+        "launch main { fuel values: [int] = [1] fire log(values[1]) land 0 }",
+        "launch main { fuel values: [int] = [1] values[-1] = 2 land 0 }",
+        "launch main { fuel values: [int] = [1] values[1] += 2 land 0 }",
+    ] {
+        assert_native_matches(source, 1);
+    }
+}
+
+#[test]
+fn native_imported_example_matches_interpreter() {
+    let fixture = Fixture::new(include_str!("../exam/11_import_mission_tools.astrn"));
+    fs::create_dir(fixture.0.join("lib")).unwrap();
+    fs::write(
+        fixture.0.join("lib/mission_tools.astrn"),
+        include_str!("../exam/lib/mission_tools.astrn"),
+    )
+    .unwrap();
+    assert_fixture_matches(&fixture, 0);
 }

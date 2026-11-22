@@ -7,7 +7,7 @@ pub(super) fn needed(program: &Program, body: &[Stmt]) -> bool {
         || program
             .items
             .iter()
-            .any(|item| matches!(item, Item::Stage { .. }))
+            .any(|item| matches!(item, Item::Stage { .. } | Item::Enum { .. }))
         || body.iter().any(|stmt| match &stmt.node {
             StmtKind::Let { init, .. } => needs_runtime(init),
             StmtKind::Assign { value, .. } => needs_runtime(value),
@@ -18,7 +18,11 @@ pub(super) fn needed(program: &Program, body: &[Stmt]) -> bool {
 
 fn needs_runtime(expr: &Expr) -> bool {
     match &expr.node {
-        ExprKind::StrLit(_) | ExprKind::Call { .. } => true,
+        ExprKind::StrLit(_)
+        | ExprKind::Call { .. }
+        | ExprKind::ArrayLit(_)
+        | ExprKind::Index { .. }
+        | ExprKind::Air => true,
         ExprKind::Unary { expr, .. } => needs_runtime(expr),
         ExprKind::Binary { lhs, rhs, .. } => needs_runtime(lhs) || needs_runtime(rhs),
         _ => false,
@@ -123,7 +127,25 @@ impl Generator<'_> {
             .rev()
             .find_map(|scope| scope.get(name))
             .cloned()
+            .or_else(|| self.enum_variant(name))
             .ok_or_else(|| unsupported(self.checked, span))
+    }
+
+    fn enum_variant(&self, variant: &str) -> Option<String> {
+        self.checked
+            .program()
+            .items
+            .iter()
+            .find_map(|item| enum_variant(item, variant))
+    }
+
+    fn location(&self, span: Span) -> String {
+        c_string(&format!(
+            "{}:{}:{}",
+            self.checked.source_path(span).display(),
+            span.line,
+            span.col
+        ))
     }
 
     fn statements(&mut self, body: &[Stmt]) -> Result<(), String> {
@@ -150,6 +172,11 @@ impl Generator<'_> {
                 op,
                 value,
             } => self.assignment(name, op, value, stmt.span),
+            StmtKind::Assign {
+                target: AssignTarget::Index { name, index },
+                op,
+                value,
+            } => self.index_assignment(name, index, op, value, stmt.span),
             StmtKind::If {
                 cond,
                 then_block,
@@ -202,6 +229,60 @@ impl Generator<'_> {
             AssignOp::Mod => format!("binary(4, {slot}, {rhs})"),
         };
         self.line(&format!("{slot} = {value};"))
+    }
+
+    fn index_assignment(
+        &mut self,
+        name: &str,
+        index: &Expr,
+        op: &AssignOp,
+        expr: &Expr,
+        span: Span,
+    ) -> Result<(), String> {
+        let index_location = self.location(index.span);
+        let value = self.expression(index)?;
+        let index = self.value(format!(
+            "checked_index({value}, {})",
+            self.location(index.span)
+        ));
+        let rhs = self.expression(expr)?;
+        let slot = self.lookup(name, span)?;
+        let operation = match op {
+            AssignOp::Assign => -1,
+            AssignOp::Add => 0,
+            AssignOp::Sub => 1,
+            AssignOp::Mul => 2,
+            AssignOp::Div => 3,
+            AssignOp::Mod => 4,
+        };
+        self.line(&format!(
+            "{slot} = array_set({slot}, {index}, {rhs}, {operation}, {}, {});",
+            index_location,
+            c_string(name)
+        ))
+    }
+
+    fn array(&mut self, elems: &[Expr]) -> Result<String, String> {
+        let values = elems
+            .iter()
+            .map(|elem| self.expression(elem))
+            .collect::<Result<Vec<_>, _>>()?;
+        let items = if values.is_empty() {
+            "NULL".to_owned()
+        } else {
+            format!("(V[]){{{}}}", values.join(", "))
+        };
+        Ok(self.value(format!("va({items}, {})", values.len())))
+    }
+
+    fn index(&mut self, array: &Expr, index: &Expr) -> Result<String, String> {
+        let value = self.expression(array)?;
+        let offset = self.expression(index)?;
+        Ok(self.value(format!(
+            "array_get({value}, {offset}, {}, {})",
+            self.location(array.span),
+            self.location(index.span)
+        )))
     }
 
     fn scan(&mut self, cond: &Expr, yes: &[Stmt], no: Option<&[Stmt]>) -> Result<(), String> {
@@ -307,6 +388,8 @@ impl Generator<'_> {
             ExprKind::Air => "air()".into(),
             ExprKind::Ident(name) => self.lookup(name, expr.span)?,
             ExprKind::Call { name, args } => return self.call(name, args, expr.span),
+            ExprKind::ArrayLit(elems) => return self.array(elems),
+            ExprKind::Index { array, index } => return self.index(array, index),
             ExprKind::Unary { op, expr } => return self.unary(op, expr),
             ExprKind::Binary {
                 op: BinOp::And | BinOp::Or,
@@ -353,8 +436,8 @@ impl Generator<'_> {
         if name == "log" {
             return Ok(self.log(&values));
         }
-        if name == "len" && values.len() == 1 {
-            return Ok(self.value(format!("string_len({})", values[0])));
+        if let Some(expression) = self.builtin(name, &values, span) {
+            return Ok(self.value(expression));
         }
         if !self
             .checked
@@ -367,6 +450,18 @@ impl Generator<'_> {
         }
         Ok(self.value(format!("s_{name}({})", values.join(", "))))
     }
+    fn builtin(&self, name: &str, values: &[String], span: Span) -> Option<String> {
+        let [argument] = values else {
+            return None;
+        };
+        match name {
+            "len" => Some(format!("value_len({argument}, {})", self.location(span))),
+            "assert" => Some(format!("assert_value({argument}, {})", self.location(span))),
+            "to_str" => Some(format!("to_string({argument})")),
+            _ => None,
+        }
+    }
+
     fn separator(&mut self, index: usize) {
         if index > 0 {
             self.code.push_str("putchar(' ');\n");
@@ -381,6 +476,17 @@ impl Generator<'_> {
         self.code.push_str("putchar('\\n');\n");
         self.value("air()".into())
     }
+}
+
+fn enum_variant(item: &Item, variant: &str) -> Option<String> {
+    let Item::Enum { name, variants } = item else {
+        return None;
+    };
+    if !variants.iter().any(|v| v.name == variant) {
+        return None;
+    }
+    let label = format!("{name}.{variant}");
+    Some(format!("ve({}, {})", c_string(&label), label.len()))
 }
 
 fn opcode(op: &BinOp) -> usize {
