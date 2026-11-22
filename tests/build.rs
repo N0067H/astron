@@ -223,7 +223,7 @@ fn scalar_ir_preserves_runtime_numeric_kinds_and_short_circuit_branches() {
     assert!(ir.contains("sdiv i64 7, 2"));
     assert!(!ir.contains("sitofp"));
     assert_eq!(ir.matches("phi i1").count(), 2);
-    assert_eq!(ir.matches("br i1").count(), 2);
+    assert_eq!(ir.matches("br i1").count(), 4);
     assert_native_matches(
         &fs::read_to_string(fixture.0.join("input.astrn")).unwrap(),
         0,
@@ -238,20 +238,7 @@ fn scalar_operations_rejected_by_interpreter_are_not_silently_enabled() {
         "payload x: float = 3 % 2.0",
         "payload x: float = 3.0 % 2",
     ] {
-        let fixture = Fixture::new(&format!("launch main {{ {statement} land 0 }}"));
-        let interpreted = fixture.command().arg("input.astrn").output().unwrap();
-        assert!(!interpreted.status.success());
-        assert!(String::from_utf8_lossy(&interpreted.stderr).contains("runtime error"));
-        let build = fixture
-            .command()
-            .args(["build", "input.astrn"])
-            .output()
-            .unwrap();
-        assert!(!build.status.success());
-        assert!(
-            String::from_utf8_lossy(&build.stderr)
-                .contains("operation is not supported by the interpreter")
-        );
+        assert_native_matches(&format!("launch main {{ {statement} land 0 }}"), 1);
     }
 }
 
@@ -603,4 +590,159 @@ fn native_imported_example_matches_interpreter() {
     )
     .unwrap();
     assert_fixture_matches(&fixture, 0);
+}
+
+#[test]
+fn native_division_and_remainder_errors_match_interpreter() {
+    assert_native_matches("launch main { land 10 / 0 }", 1);
+    for expression in [
+        "10 / 0",
+        "10 % 0",
+        "10.0 / -0.0",
+        "10.0 % 0.0",
+        "10 / 0.0",
+        "10.0 / 0",
+        "(-9223372036854775807 - 1) / -1",
+        "(-9223372036854775807 - 1) % -1",
+    ] {
+        assert_native_matches(
+            &format!("launch main {{ payload value: float = {expression} land 0 }}"),
+            1,
+        );
+        assert_native_matches(
+            &format!("launch main {{ fire log(\"before\") fire log({expression}) land 0 }}"),
+            1,
+        );
+    }
+    for statement in [
+        "fuel value: int = 10 value /= 0",
+        "fuel value: int = 10 value %= 0",
+        "fuel values: [int] = [10] values[0] /= 0",
+        "fuel values: [int] = [10] values[0] %= 0",
+        "fuel values: [int] = [10] values[0] += air",
+    ] {
+        assert_native_matches(&format!("launch main {{ {statement} land 0 }}"), 1);
+    }
+}
+
+#[test]
+fn native_integer_overflow_wraps_like_interpreter() {
+    assert_native_matches(
+        "launch main {
+            payload maximum: int = 9223372036854775807
+            payload minimum: int = -maximum - 1
+            fire assert(maximum + 1 == minimum)
+            fire assert(minimum - 1 == maximum)
+            fire assert(maximum * 2 == -2)
+            fire assert(-minimum == minimum)
+            fuel value: int = maximum
+            value += 1
+            value -= 1
+            value *= 2
+            fire assert(value == -2)
+            fuel values: [int] = [maximum]
+            values[0] += 1
+            fire assert(values[0] == minimum)
+            fire log(value, values, minimum)
+            land 0
+        }",
+        0,
+    );
+    assert_native_matches("launch main { land 9223372036854775807 + 1 }", 0);
+    assert_native_matches(
+        "launch main { land (-9223372036854775807 - 1) - 1 }",
+        if cfg!(windows) { -1 } else { 255 },
+    );
+    assert_native_matches(
+        "launch main { land 9223372036854775807 * 2 }",
+        if cfg!(windows) { -2 } else { 254 },
+    );
+    assert_native_matches("launch main { land -(-9223372036854775807 - 1) }", 0);
+}
+
+#[test]
+fn native_air_runtime_type_errors_match_interpreter() {
+    for statement in [
+        "payload value: int = air fire log(value + 1)",
+        "payload value: int = air fire log(value < 1)",
+        "payload value: int = air fire log(-value)",
+        "payload value: flag = air scan value { land 7 }",
+        "payload value: flag = air burn value { eject }",
+        "payload value: flag = air fire log(not value)",
+        "payload value: flag = air fire log(value and true)",
+        "payload value: flag = air fire log(true and value)",
+        "payload value: flag = air fire log(false or value)",
+        "payload value: flag = air fire assert(value)",
+        "payload value: str = air fire log(fire len(value))",
+        "payload values: [int] = air fire log(values[0])",
+        "fuel values: [int] = air values[0] = 1",
+        "payload index: int = air payload values: [int] = [1] fire log(values[index])",
+        "payload index: int = air fuel values: [int] = [1] values[index] = 2",
+        "payload bound: int = air spin i in bound..1 { fire log(i) }",
+        "payload bound: int = air spin i in 0..bound { fire log(i) }",
+        "spin i in 0..=9223372036854775807 { eject }",
+    ] {
+        assert_native_matches(&format!("launch main {{ {statement} land 0 }}"), 1);
+    }
+}
+
+#[test]
+fn native_air_returns_abort_and_short_circuit_match_interpreter() {
+    for (source, code) in [
+        ("launch main { land air }", 0),
+        ("ignite { land air } launch main { land 7 }", 7),
+        ("ignite { abort } launch main { land 7 }", 1),
+        ("launch main { abort }", 1),
+        (
+            "stage stop() lands int { abort } launch main { land fire stop() }",
+            0,
+        ),
+        (
+            "stage stop() lands int { land air } launch main { land fire stop() }",
+            0,
+        ),
+        (
+            "stage stop() lands int { } launch main { land fire stop() }",
+            0,
+        ),
+        (
+            "launch main { payload value: flag = air fire assert(true or value) fire assert(not (false and value)) land 0 }",
+            0,
+        ),
+        (
+            "launch main { payload result: flag = false and (0x01 < 0x02) land 0 }",
+            0,
+        ),
+        (
+            "launch main { payload result: flag = true or (1 / 0 == 0) land 0 }",
+            0,
+        ),
+        (
+            "launch main { payload result: flag = (false and (1 / 0 == 0)) or (10 / 2 == 5) land 0 }",
+            0,
+        ),
+        (
+            "launch main { payload left: int = air payload right: int = air fire assert(left == right) fire log(fire to_str(left)) land 0 }",
+            0,
+        ),
+    ] {
+        assert_native_matches(source, code);
+    }
+}
+
+#[test]
+fn native_imported_runtime_errors_preserve_source_locations() {
+    for body in [
+        "land 1 / 0",
+        "payload values: [int] = [1] land values[2]",
+        "fire assert(false) land 0",
+    ] {
+        let fixture = Fixture::new(r#"import "./helper.astrn" launch main { land fire fail() }"#);
+        fs::write(
+            fixture.0.join("helper.astrn"),
+            format!("stage fail() lands int {{ {body} }}"),
+        )
+        .unwrap();
+        assert_fixture_matches(&fixture, 1);
+    }
 }

@@ -8,6 +8,7 @@
 typedef struct V { int k; int64_t i; double f; const char *s; size_t n; const struct V *a; } V;
 static V vi(int64_t i) { return (V){0,i,0,0}; }
 static V vf(double f) { return (V){1,0,f,0}; }
+static V vf_bits(uint64_t bits) { double f; memcpy(&f,&bits,sizeof(f)); return vf(f); }
 static V vb(int b) { return (V){2,b,0,0}; }
 static V vy(int b) { return (V){3,b,0,0}; }
 static V vs(const char *s, size_t n) { return (V){4,0,0,s,n}; }
@@ -37,8 +38,8 @@ static V va(const V *items, size_t n) {
     if (n) memcpy(copy,items,n * sizeof(V));
     return (V){7,0,0,0,n,copy};
 }
-static int truth(V v) { if (v.k != 2) exit(1); return v.i != 0; }
-static int64_t integer(V v) { if (v.k != 0) exit(1); return v.i; }
+static int truth(V v, const char *location) { if (v.k != 2) fail(location,"expected flag, got %s",kind(v)); return v.i != 0; }
+static int64_t integer(V v, const char *location) { if (v.k != 0) fail(location,"expected int, got %s",kind(v)); return v.i; }
 static double number(V v) { return v.k == 0 ? (double)v.i : v.f; }
 static int string_compare(V a, V b) {
     size_t n = a.n < b.n ? a.n : b.n;
@@ -68,13 +69,14 @@ static int equal(V a, V b) {
     if (a.k == 7) return 0;
     return a.i == b.i;
 }
-static V unary(int op, V a) {
-    if (op) return vb(!truth(a));
+static V unary(int op, V a, const char *location, const char *inner_location) {
+    if (op) return vb(!truth(a,inner_location));
     if (a.k == 0) return vi((int64_t)(0-(uint64_t)a.i));
     if (a.k == 1) return vf(-a.f);
-    exit(1);
+    fail(location,"cannot negate %s",kind(a));
+    return air();
 }
-static V binary(int op, V a, V b) {
+static V binary(int op, V a, V b, const char *location) {
     if (op == 5) return vb(equal(a,b));
     if (op == 6) return vb(!equal(a,b));
     if (a.k == 4 && b.k == 4) {
@@ -84,9 +86,12 @@ static V binary(int op, V a, V b) {
         if (op == 8) return vb(order > 0);
         if (op == 9) return vb(order <= 0);
         if (op == 10) return vb(order >= 0);
-        exit(1);
     }
-    if (a.k > 1 || b.k > 1 || (op == 4 && a.k != b.k)) exit(1);
+    if (a.k > 1 || b.k > 1 || (op == 4 && a.k != b.k)) {
+        if (op >= 7) fail(location,"cannot compare %s and %s",kind(a),kind(b));
+        static const char *operators[] = {"+","-","*","/","%"};
+        fail(location,"operator '%s' is not defined for %s and %s",operators[op],kind(a),kind(b));
+    }
     if (op >= 7) {
         if (a.k == 0 && b.k == 0) {
             if (op == 7) return vb(a.i < b.i);
@@ -104,12 +109,14 @@ static V binary(int op, V a, V b) {
         if (op == 0) return vi((uint64_t)a.i + (uint64_t)b.i);
         if (op == 1) return vi((uint64_t)a.i - (uint64_t)b.i);
         if (op == 2) return vi((uint64_t)a.i * (uint64_t)b.i);
-        if (!b.i || (a.i == INT64_MIN && b.i == -1)) exit(1);
+        if (!b.i) fail(location,op == 3 ? "division by zero" : "modulo by zero");
+        if (a.i == INT64_MIN && b.i == -1)
+            fail(location,op == 3 ? "integer division overflow" : "integer remainder overflow");
         if (op == 3) return vi(a.i / b.i);
         return vi(a.i % b.i);
     }
     double x = number(a), y = number(b);
-    if ((op == 3 || op == 4) && y == 0) exit(1);
+    if ((op == 3 || op == 4) && y == 0) fail(location,op == 3 ? "division by zero" : "modulo by zero");
     if (op == 0) return vf(x+y);
     if (op == 1) return vf(x-y);
     if (op == 2) return vf(x*y);
@@ -128,13 +135,13 @@ static V array_get(V array, V index, const char *array_location, const char *ind
         fail(index_location,"array index %" PRId64 " out of bounds with length %zu",index.i,array.n);
     return array.a[index.i];
 }
-static V array_set(V array, V index, V rhs, int op, const char *location, const char *name) {
+static V array_set(V array, V index, V rhs, int op, const char *location, const char *index_location, const char *name) {
     if (array.k != 7) fail(location,"cannot index into %s",kind(array));
     if ((uint64_t)index.i >= array.n)
-        fail(location,"array index %" PRId64 " out of bounds for '%s' with length %zu",index.i,name,array.n);
+        fail(index_location,"array index %" PRId64 " out of bounds for '%s' with length %zu",index.i,name,array.n);
     V result = va(array.a,array.n);
     V *items = (V *)result.a;
-    items[index.i] = op < 0 ? rhs : binary(op,items[index.i],rhs);
+    items[index.i] = op < 0 ? rhs : binary(op,items[index.i],rhs,location);
     return result;
 }
 static V value_len(V v, const char *location) {

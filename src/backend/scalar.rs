@@ -42,6 +42,7 @@ struct Generator<'a> {
     ir: String,
     next: usize,
     block: String,
+    globals: String,
 }
 
 pub(super) fn compile(checked: &CheckedProgram, body: &[Stmt]) -> Result<String, String> {
@@ -51,19 +52,101 @@ pub(super) fn compile(checked: &CheckedProgram, body: &[Stmt]) -> Result<String,
         ir: String::from("define i32 @main() {\nentry:\n"),
         next: 0,
         block: String::from("entry"),
+        globals: String::new(),
     };
     for stmt in body {
         if generator.statement(stmt)? {
             generator.ir.push_str("}\n");
-            return Ok(generator.ir);
+            return Ok(generator.finish());
         }
     }
 
     generator.ir.push_str("  ret i32 0\n}\n");
-    Ok(generator.ir)
+    Ok(generator.finish())
 }
 
 impl Generator<'_> {
+    fn finish(self) -> String {
+        if self.globals.is_empty() {
+            return self.ir;
+        }
+        let stream = if cfg!(windows) {
+            "declare ptr @__acrt_iob_func(i32)\n"
+        } else {
+            stderr_declaration()
+        };
+        format!(
+            "{stream}declare i64 @fwrite(ptr, i64, i64, ptr)\ndeclare void @exit(i32) noreturn\n{}{}",
+            self.globals, self.ir
+        )
+    }
+
+    fn guard(&mut self, condition: Value, span: Span, message: &str) {
+        let id = self.next;
+        self.next += 1;
+        let diagnostic = format!(
+            "{}:{}:{}: runtime error: {message}\n",
+            self.checked.source_path(span).display(),
+            span.line,
+            span.col
+        );
+        let bytes = diagnostic
+            .bytes()
+            .map(|b| format!("\\{b:02X}"))
+            .collect::<String>();
+        let size = diagnostic.len();
+        self.globals.push_str(&format!(
+            "@error{id} = private constant [{size} x i8] c\"{bytes}\"\n"
+        ));
+        self.ir.push_str(&format!(
+            "  br i1 {}, label %error{id}, label %checked{id}\nerror{id}:\n",
+            condition.operand
+        ));
+        let stream = if cfg!(windows) {
+            String::from("call ptr @__acrt_iob_func(i32 2)")
+        } else {
+            format!("load ptr, ptr @{}", stderr_symbol())
+        };
+        self.ir.push_str(&format!("  %stderr{id} = {stream}\n  call i64 @fwrite(ptr @error{id}, i64 1, i64 {size}, ptr %stderr{id})\n  call void @exit(i32 1)\n  unreachable\nchecked{id}:\n"));
+        self.block = format!("checked{id}");
+    }
+
+    fn division_checks(&mut self, op: &BinOp, lhs: &Value, rhs: &Value, span: Span) {
+        let (compare, zero) = if rhs.kind == Kind::Float {
+            ("fcmp oeq", "0.0")
+        } else {
+            ("icmp eq", "0")
+        };
+        let condition = self.instruction(
+            Kind::Flag,
+            format!("{compare} {} {}, {zero}", rhs.kind.ir(), rhs.operand),
+        );
+        let message = if *op == BinOp::Div {
+            "division by zero"
+        } else {
+            "modulo by zero"
+        };
+        self.guard(condition, span, message);
+        if lhs.kind != Kind::Int {
+            return;
+        }
+        let minimum = self.instruction(
+            Kind::Flag,
+            format!("icmp eq i64 {}, -9223372036854775808", lhs.operand),
+        );
+        let negative = self.instruction(Kind::Flag, format!("icmp eq i64 {}, -1", rhs.operand));
+        let overflow = self.instruction(
+            Kind::Flag,
+            format!("and i1 {}, {}", minimum.operand, negative.operand),
+        );
+        let message = if *op == BinOp::Div {
+            "integer division overflow"
+        } else {
+            "integer remainder overflow"
+        };
+        self.guard(overflow, span, message);
+    }
+
     fn instruction(&mut self, kind: Kind, instruction: String) -> Value {
         let name = format!("%v{}", self.next);
         self.next += 1;
@@ -259,6 +342,9 @@ impl Generator<'_> {
         }
         let instruction = binary_instruction(op, lhs.kind, rhs.kind)
             .ok_or_else(|| self.invalid_operation(span))?;
+        if matches!(op, BinOp::Div | BinOp::Mod) {
+            self.division_checks(op, &lhs, &rhs, span);
+        }
         let kind = if matches!(
             op,
             BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq
@@ -334,5 +420,21 @@ fn float_instruction(op: &BinOp) -> Option<&'static str> {
         BinOp::LtEq => Some("fcmp ule"),
         BinOp::GtEq => Some("fcmp uge"),
         _ => None,
+    }
+}
+
+fn stderr_symbol() -> &'static str {
+    if cfg!(target_vendor = "apple") {
+        "__stderrp"
+    } else {
+        "stderr"
+    }
+}
+
+fn stderr_declaration() -> &'static str {
+    if cfg!(target_vendor = "apple") {
+        "@__stderrp = external global ptr\n"
+    } else {
+        "@stderr = external global ptr\n"
     }
 }

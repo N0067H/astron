@@ -20,7 +20,7 @@ pub fn emit_ir(checked: &CheckedProgram, target: &str) -> Result<String, String>
     if control::needed(program, body) {
         return control::compile(checked, body);
     }
-    scalar::compile(checked, body)
+    scalar::compile(checked, body).or_else(|_| control::compile(checked, body))
 }
 
 fn unsupported(checked: &CheckedProgram, span: Span) -> String {

@@ -140,6 +140,24 @@ Negating a non-numeric value also fails.
 example.astrn:3:14: runtime error: cannot negate str
 ```
 
+## Integer Overflow
+
+Integers are signed 64-bit values. Addition, subtraction, multiplication, and
+negation wrap modulo 2^64 in both interpreted and native programs, regardless
+of whether Astron itself was built in debug or release mode.
+
+For example, `9223372036854775807 + 1` produces `-9223372036854775808`.
+Negating the minimum integer produces the same minimum integer.
+
+Dividing the minimum integer by `-1` cannot produce a signed 64-bit result.
+Division and remainder report errors instead of panicking or invoking native
+undefined behavior:
+
+```text
+example.astrn:3:14: runtime error: integer division overflow
+example.astrn:3:14: runtime error: integer remainder overflow
+```
+
 ## Comparison Errors
 
 Some values cannot be compared with `<`, `>`, `<=`, or `>=`.
@@ -192,6 +210,25 @@ User-defined stages validate argument counts at runtime.
 ```text
 example.astrn:4:10: runtime error: function 'boost' expects 2 arguments, got 1
 ```
+
+## Air and Abort
+
+`air` is a void value, not a numeric zero or a false flag. It displays as an
+empty string and compares equal to another void value. Using it in arithmetic,
+a condition, an index, or a range bound produces the corresponding runtime
+type error, even if its variable has a numeric or flag declaration.
+
+A stage produces `air` when it reaches its end, executes `abort`, or returns
+without a value. Stage-local `abort` returns control to the caller. In ignite
+or a launch, `abort` exits the program with code 1 without an error message.
+
+An integer `land` value supplies the exit code through a signed 32-bit
+conversion. A non-integer launch return exits with code 0. A non-integer
+ignite return continues execution at the selected launch.
+
+Native diagnostics embed the source paths and locations from compilation,
+including imported modules. Short-circuited expressions do not raise errors
+or evaluate their right-hand operands.
 
 ## Notes
 

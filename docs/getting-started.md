@@ -57,7 +57,7 @@ Mixed `int`/`float` arithmetic and comparisons follow the interpreter. A
 variable's actual value type is preserved: initializing a `float` variable with
 an integer does not itself convert the value to floating point. `byte` supports
 storage, assignment, and equality; byte arithmetic and ordering, and mixed
-integer/float remainder, fail in the interpreter and remain unsupported in native programs.
+integer/float remainder, report the same runtime errors in interpreted and native programs.
 
 Native compilation also supports `scan`/`fallback`, `route`, `burn`,
 `spin` over exclusive or inclusive integer ranges, and `orbit`. `eject` and
@@ -74,12 +74,19 @@ assignment, compound assignment, and value copies across variables and stage
 calls. Enum values support comparisons, route matching, and display as
 `Enum.Variant`. Arrays display recursively, including nested arrays.
 
-Failed assertions and invalid array indices report source locations and exit
-with code 1. Other native runtime error diagnostics and integer overflow
-behavior remain future work.
-Use nonzero divisors and in-range integer arithmetic for now.
+Runtime errors report the source path, line, and column and exit with code 1.
+This includes division and remainder by zero, invalid array indices, failed
+assertions, invalid runtime value types, and inclusive range end overflow.
 
-Simple scalar programs generate textual LLVM IR directly. Programs using
+Integer addition, subtraction, multiplication, and negation wrap at 64 bits in
+both execution modes. Division or remainder of the minimum integer by `-1`
+reports an overflow error. `air` is a void value: it displays as an empty string,
+compares equal to another void value, and fails when used as a number or flag.
+A stage that aborts or returns without a value produces `air`. Launch and ignite
+`abort` exit with code 1; a non-integer launch return exits with code 0.
+
+Supported scalar operations generate textual LLVM IR directly, with runtime
+checks before division and remainder. Other expressions use the C11 runtime. Programs using
 strings, arrays, enums, built-ins, control flow, stages, or ignite first lower
 to C11 with tagged values that preserve runtime value types, then Clang
 generates LLVM IR. Both paths invoke

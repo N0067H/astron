@@ -512,7 +512,7 @@ impl<'a> Interpreter<'a> {
                 match op {
                     UnOp::Not => Ok(Value::Bool(!self.expect_bool(&val, inner.span)?)),
                     UnOp::Neg => match val {
-                        Value::Int(n) => Ok(Value::Int(-n)),
+                        Value::Int(n) => Ok(Value::Int(n.wrapping_neg())),
                         Value::Float(f) => Ok(Value::Float(-f)),
                         other => Err(RuntimeError::new(
                             expr.span,
@@ -686,7 +686,7 @@ impl<'a> Interpreter<'a> {
 fn eval_binary(op: &BinOp, lhs: Value, rhs: Value, span: Span) -> Result<Value, RuntimeError> {
     match op {
         BinOp::Add => match (lhs, rhs) {
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_add(b))),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 + b)),
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + b as f64)),
@@ -694,14 +694,14 @@ fn eval_binary(op: &BinOp, lhs: Value, rhs: Value, span: Span) -> Result<Value, 
             (l, r) => Err(binary_type_error(span, "+", &l, &r)),
         },
         BinOp::Sub => match (lhs, rhs) {
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_sub(b))),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 - b)),
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a - b as f64)),
             (l, r) => Err(binary_type_error(span, "-", &l, &r)),
         },
         BinOp::Mul => match (lhs, rhs) {
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_mul(b))),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 * b)),
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a * b as f64)),
@@ -714,7 +714,10 @@ fn eval_binary(op: &BinOp, lhs: Value, rhs: Value, span: Span) -> Result<Value, 
             }
             (Value::Int(_), Value::Float(0.0)) => Err(RuntimeError::new(span, "division by zero")),
             (Value::Float(_), Value::Int(0)) => Err(RuntimeError::new(span, "division by zero")),
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
+            (Value::Int(a), Value::Int(b)) => a
+                .checked_div(b)
+                .map(Value::Int)
+                .ok_or_else(|| RuntimeError::new(span, "integer division overflow")),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 / b)),
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a / b as f64)),
@@ -723,7 +726,10 @@ fn eval_binary(op: &BinOp, lhs: Value, rhs: Value, span: Span) -> Result<Value, 
         BinOp::Mod => match (lhs, rhs) {
             (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new(span, "modulo by zero")),
             (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::new(span, "modulo by zero")),
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
+            (Value::Int(a), Value::Int(b)) => a
+                .checked_rem(b)
+                .map(Value::Int)
+                .ok_or_else(|| RuntimeError::new(span, "integer remainder overflow")),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a % b)),
             (l, r) => Err(binary_type_error(span, "%", &l, &r)),
         },

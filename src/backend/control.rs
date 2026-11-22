@@ -222,11 +222,11 @@ impl Generator<'_> {
         let slot = self.lookup(name, span)?;
         let value = match op {
             AssignOp::Assign => rhs,
-            AssignOp::Add => format!("binary(0, {slot}, {rhs})"),
-            AssignOp::Sub => format!("binary(1, {slot}, {rhs})"),
-            AssignOp::Mul => format!("binary(2, {slot}, {rhs})"),
-            AssignOp::Div => format!("binary(3, {slot}, {rhs})"),
-            AssignOp::Mod => format!("binary(4, {slot}, {rhs})"),
+            AssignOp::Add => format!("binary(0, {slot}, {rhs}, {})", self.location(span)),
+            AssignOp::Sub => format!("binary(1, {slot}, {rhs}, {})", self.location(span)),
+            AssignOp::Mul => format!("binary(2, {slot}, {rhs}, {})", self.location(span)),
+            AssignOp::Div => format!("binary(3, {slot}, {rhs}, {})", self.location(span)),
+            AssignOp::Mod => format!("binary(4, {slot}, {rhs}, {})", self.location(span)),
         };
         self.line(&format!("{slot} = {value};"))
     }
@@ -256,7 +256,8 @@ impl Generator<'_> {
             AssignOp::Mod => 4,
         };
         self.line(&format!(
-            "{slot} = array_set({slot}, {index}, {rhs}, {operation}, {}, {});",
+            "{slot} = array_set({slot}, {index}, {rhs}, {operation}, {}, {}, {});",
+            self.location(span),
             index_location,
             c_string(name)
         ))
@@ -286,8 +287,10 @@ impl Generator<'_> {
     }
 
     fn scan(&mut self, cond: &Expr, yes: &[Stmt], no: Option<&[Stmt]>) -> Result<(), String> {
+        let location = self.location(cond.span);
         let cond = self.expression(cond)?;
-        self.code.push_str(&format!("if (truth({cond}))\n"));
+        self.code
+            .push_str(&format!("if (truth({cond}, {location}))\n"));
         self.block(yes)?;
         if let Some(body) = no {
             self.code.push_str("else\n");
@@ -298,8 +301,10 @@ impl Generator<'_> {
 
     fn burn(&mut self, cond: &Expr, body: &[Stmt]) -> Result<(), String> {
         self.code.push_str("while (1) {\n");
+        let location = self.location(cond.span);
         let cond = self.expression(cond)?;
-        self.code.push_str(&format!("if (!truth({cond})) break;\n"));
+        self.code
+            .push_str(&format!("if (!truth({cond}, {location})) break;\n"));
         self.block(body)?;
         self.code.push_str("}\n");
         Ok(())
@@ -356,18 +361,23 @@ impl Generator<'_> {
         else {
             return Err(unsupported(self.checked, range.span));
         };
+        let start_location = self.location(start.span);
+        let end_location = self.location(end.span);
+        let range_location = self.location(range.span);
         let start = self.expression(start)?;
+        let start = self.value(format!("vi(integer({start}, {start_location}))"));
         let end = self.expression(end)?;
         let index = self.fresh();
         let bound = self.fresh();
-        self.code
-            .push_str(&format!("{{\nint64_t {bound} = integer({end});\n"));
+        self.code.push_str(&format!(
+            "{{\nint64_t {bound} = integer({end}, {end_location});\n"
+        ));
         if *inclusive {
             self.code
-                .push_str(&format!("if ({bound} == INT64_MAX) exit(1);\n{bound}++;\n"));
+                .push_str(&format!("if ({bound} == INT64_MAX) fail({range_location}, \"inclusive range end overflowed\");\n{bound}++;\n"));
         }
         self.code.push_str(&format!(
-            "for (int64_t {index} = integer({start}); {index} < {bound}; {index}++) {{\n"
+            "for (int64_t {index} = integer({start}, {start_location}); {index} < {bound}; {index}++) {{\n"
         ));
         self.scopes.push(HashMap::new());
         let slot = self.value(format!("vi({index})"));
@@ -381,7 +391,7 @@ impl Generator<'_> {
     fn expression(&mut self, expr: &Expr) -> Result<String, String> {
         let expression = match &expr.node {
             ExprKind::IntLit(n) => format!("vi((int64_t)UINT64_C({}))", *n as u64),
-            ExprKind::FloatLit(n) => format!("vf({n:.17e})"),
+            ExprKind::FloatLit(n) => format!("vf_bits(UINT64_C({}))", n.to_bits()),
             ExprKind::BoolLit(b) => format!("vb({})", i32::from(*b)),
             ExprKind::ByteLit(b) => format!("vy({b})"),
             ExprKind::StrLit(s) => format!("vs({}, {})", c_string(s), s.len()),
@@ -390,41 +400,54 @@ impl Generator<'_> {
             ExprKind::Call { name, args } => return self.call(name, args, expr.span),
             ExprKind::ArrayLit(elems) => return self.array(elems),
             ExprKind::Index { array, index } => return self.index(array, index),
-            ExprKind::Unary { op, expr } => return self.unary(op, expr),
+            ExprKind::Unary { op, expr: inner } => return self.unary(op, inner, expr.span),
             ExprKind::Binary {
                 op: BinOp::And | BinOp::Or,
                 lhs,
                 rhs,
             } => return self.logical(expr, lhs, rhs),
-            ExprKind::Binary { op, lhs, rhs } => return self.binary(op, lhs, rhs),
+            ExprKind::Binary { op, lhs, rhs } => return self.binary(op, lhs, rhs, expr.span),
             _ => return Err(unsupported(self.checked, expr.span)),
         };
         Ok(self.value(expression))
     }
 
-    fn unary(&mut self, op: &UnOp, expr: &Expr) -> Result<String, String> {
+    fn unary(&mut self, op: &UnOp, expr: &Expr, span: Span) -> Result<String, String> {
         let value = self.expression(expr)?;
-        Ok(self.value(format!("unary({}, {value})", i32::from(*op == UnOp::Not))))
+        Ok(self.value(format!(
+            "unary({}, {value}, {}, {})",
+            i32::from(*op == UnOp::Not),
+            self.location(span),
+            self.location(expr.span)
+        )))
     }
 
-    fn binary(&mut self, op: &BinOp, lhs: &Expr, rhs: &Expr) -> Result<String, String> {
+    fn binary(&mut self, op: &BinOp, lhs: &Expr, rhs: &Expr, span: Span) -> Result<String, String> {
         let lhs = self.expression(lhs)?;
         let rhs = self.expression(rhs)?;
-        Ok(self.value(format!("binary({}, {lhs}, {rhs})", opcode(op))))
+        Ok(self.value(format!(
+            "binary({}, {lhs}, {rhs}, {})",
+            opcode(op),
+            self.location(span)
+        )))
     }
 
     fn logical(&mut self, expr: &Expr, lhs: &Expr, rhs: &Expr) -> Result<String, String> {
+        let left_location = self.location(lhs.span);
+        let right_location = self.location(rhs.span);
         let left = self.expression(lhs)?;
-        let result = self.value(format!("vb(truth({left}))"));
+        let result = self.value(format!("vb(truth({left}, {left_location}))"));
         let ExprKind::Binary { op, .. } = &expr.node else {
             unreachable!()
         };
         let negate = if *op == BinOp::Or { "!" } else { "" };
-        self.code
-            .push_str(&format!("if ({negate}truth({result})) {{\n"));
+        self.code.push_str(&format!(
+            "if ({negate}truth({result}, {left_location})) {{\n"
+        ));
         let right = self.expression(rhs)?;
-        self.code
-            .push_str(&format!("{result} = vb(truth({right}));\n}}\n"));
+        self.code.push_str(&format!(
+            "{result} = vb(truth({right}, {right_location}));\n}}\n"
+        ));
         Ok(result)
     }
 
