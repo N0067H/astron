@@ -8,39 +8,24 @@ path/to/file.astrn:line:col: runtime error: message
 
 These errors happen after parsing and type checking, while the program is running.
 
-## Undefined Names
+## Errors Before Execution
 
-Accessing a variable that does not exist reports an error.
+The interpreter and `build` command both parse and type-check the program
+before execution or native code generation. Undefined names, invalid argument
+counts, incompatible declared types, and ranges outside `spin` are normally
+rejected at this stage. Those diagnostics do not include `runtime error:`.
+For example, `fire unknown_stage()` is a type-checking error, not a runtime
+failure.
 
-```astrn
-launch main {
-    fire log(missing_value)
-    land 0
-}
-```
-
-```text
-example.astrn:2:14: runtime error: undefined variable 'missing_value'
-```
-
-Calling a stage that does not exist also reports an error.
-
-```astrn
-launch main {
-    fire unknown_stage()
-    land 0
-}
-```
+A missing launch is reported differently by the two CLI modes. Interpreting
+with `--launch missing` reports:
 
 ```text
-example.astrn:2:5: runtime error: undefined function 'unknown_stage'
+path/to/file.astrn:1:1: runtime error: no 'launch missing' found
 ```
 
-If the requested launch block does not exist, Astron exits with an error.
-
-```text
-path/to/file.astrn:1:1: runtime error: no 'launch diagnostics' found
-```
+Building with the same option reports `build error: no 'launch missing' found`
+and does not produce an executable.
 
 ## Array Index Errors
 
@@ -76,10 +61,11 @@ Index assignment reports the array name in the message.
 example.astrn:3:12: runtime error: array index 5 out of bounds for 'values' with length 2
 ```
 
-Trying to index into a non-array value also fails at runtime.
+A variable declared as an array can contain `air`. Indexing that value fails
+at runtime; directly indexing a string is rejected by the type checker.
 
 ```text
-example.astrn:3:14: runtime error: cannot index into str
+example.astrn:3:14: runtime error: cannot index into void
 ```
 
 ## Condition Errors
@@ -95,10 +81,11 @@ This applies to:
 - `not`
 - `assert`
 
-If a non-`flag` value reaches one of those operations, Astron reports:
+A variable declared as `flag` can contain `air`. If that void value reaches
+one of those operations, Astron reports:
 
 ```text
-example.astrn:3:10: runtime error: expected flag, got int
+example.astrn:3:10: runtime error: expected flag, got void
 ```
 
 ## Arithmetic Errors
@@ -107,13 +94,13 @@ Astron reports invalid arithmetic at runtime when the operation is not defined f
 
 ```astrn
 launch main {
-    fire log("fuel" + 1)
+    fire log(0x01 + 0x02)
     land 0
 }
 ```
 
 ```text
-example.astrn:2:14: runtime error: operator '+' is not defined for str and int
+example.astrn:2:14: runtime error: operator '+' is not defined for byte and byte
 ```
 
 Division and modulo by zero are also reported explicitly.
@@ -134,10 +121,10 @@ example.astrn:3:14: runtime error: division by zero
 example.astrn:3:14: runtime error: modulo by zero
 ```
 
-Negating a non-numeric value also fails.
+A numeric variable containing `air` fails when negated.
 
 ```text
-example.astrn:3:14: runtime error: cannot negate str
+example.astrn:3:14: runtime error: cannot negate void
 ```
 
 ## Integer Overflow
@@ -163,21 +150,16 @@ example.astrn:3:14: runtime error: integer remainder overflow
 Some values cannot be compared with `<`, `>`, `<=`, or `>=`.
 
 ```text
-example.astrn:3:10: runtime error: cannot compare array and str
+example.astrn:3:10: runtime error: cannot compare byte and byte
 ```
 
 ## Range Errors
 
-Range expressions are only valid inside `spin`.
+Range expressions are only valid inside `spin`; the type checker rejects
+other uses. A bound declared as `int` but containing `air` fails at runtime:
 
 ```text
-example.astrn:3:18: runtime error: range expression is only allowed in spin
-```
-
-If a `spin` loop receives an invalid range during execution, Astron reports it.
-
-```text
-example.astrn:3:10: runtime error: spin requires a range expression
+example.astrn:3:18: runtime error: expected int, got void
 ```
 
 Inclusive ranges that overflow the end bound also fail.
@@ -188,27 +170,25 @@ example.astrn:3:10: runtime error: inclusive range end overflowed
 
 ## Built-in Function Errors
 
-Built-in stages validate argument counts and runtime value kinds.
+Built-in argument counts and declared types are checked before execution.
+Runtime checks still apply to values that are declared with an accepted type
+but actually contain `air`, for example:
 
-```text
-example.astrn:3:14: runtime error: 'len' expects 1 argument, got 2
-example.astrn:3:14: runtime error: 'len' expects array or str, got flag
-example.astrn:3:14: runtime error: 'assert' expects 1 argument, got 0
-example.astrn:3:14: runtime error: 'to_str' expects 1 argument, got 2
+```astrn
+launch main {
+    payload name: str = air
+    fire log(fire len(name))
+    land 0
+}
 ```
+
+The call reports `'len' expects array or str, got void`. Likewise, passing a
+`flag` variable containing `air` to `assert` reports `expected flag, got void`.
 
 If `assert` receives `false`, Astron reports:
 
 ```text
 example.astrn:3:10: runtime error: assertion failed
-```
-
-## Stage Call Errors
-
-User-defined stages validate argument counts at runtime.
-
-```text
-example.astrn:4:10: runtime error: function 'boost' expects 2 arguments, got 1
 ```
 
 ## Air and Abort
@@ -223,8 +203,10 @@ without a value. Stage-local `abort` returns control to the caller. In ignite
 or a launch, `abort` exits the program with code 1 without an error message.
 
 An integer `land` value supplies the exit code through a signed 32-bit
-conversion. A non-integer launch return exits with code 0. A non-integer
-ignite return continues execution at the selected launch.
+conversion; operating systems may further restrict it, such as to the low
+8 bits on Unix. Launch return expressions are checked as `int`, but `air`
+is allowed and exits with code 0. In `ignite`, a bare `land` or `land air`
+continues execution at the selected launch.
 
 Native diagnostics embed the source paths and locations from compilation,
 including imported modules. Short-circuited expressions do not raise errors

@@ -86,7 +86,7 @@ All variables require an explicit type annotation.
 | bool    | `flag`   |
 | byte    | `byte`   |
 | void    | `void`   |
-| null    | `air`    |
+| void value | `air` |
 | array   | `[type]` |
 | enum    | `enum`   |
 
@@ -97,6 +97,28 @@ payload checksum: byte = 0xFF
 fuel active: flag = true
 fuel nothing: str = air
 ```
+
+`air` is the runtime value of `void`, not a separate type annotation or a
+numeric zero. A typed variable can contain `air`, but numeric and flag
+operations check its actual value at runtime.
+
+## Arrays and Value Copies
+
+Arrays use zero-based integer indices. Element mutation requires `fuel`.
+Assigning or passing an array copies its value; changing one variable's array
+does not change another copy, including copies passed to stages.
+
+```astrn
+fuel values: [int] = [1, 2, 3]
+payload saved: [int] = values
+values[0] += 10
+fire log(values, saved)
+```
+
+This prints `[11, 2, 3] [1, 2, 3]`. Arrays can contain arrays, and nested arrays
+keep the same value-copy behavior. Negative or out-of-bounds indices report
+runtime errors. Array `==` is not structural equality: it returns `false`,
+even when comparing an array with itself; `!=` returns `true`.
 
 ## Enums
 
@@ -124,6 +146,11 @@ launch main {
     land 0
 }
 ```
+
+Variants are referenced by their bare names (`Orbit`, not `Phase.Orbit`).
+Variant names must be unique across enums in the loaded program. Local
+variables may shadow a variant name. Enum equality compares the enum and
+variant; `log` and `to_str` display values as `Phase.Orbit`.
 
 ## Functions
 
@@ -203,6 +230,16 @@ land value
 abort
 ```
 
+A launch's integer `land` value becomes a signed 32-bit process exit code;
+the operating system may restrict it further. A launch may reach its end
+without `land`, or use `land air`, to exit with code 0. A bare `land` is valid
+in a `void` stage or `ignite`; launch returns are checked as `int`.
+
+A stage produces `air` when it reaches its end, returns `air`, or executes
+`abort`. `abort` inside a stage returns to the caller; in `ignite` or a launch,
+it ends the process with code 1. `land air` in `ignite` skips the remainder of
+that initializer and continues at the selected launch.
+
 ## Operators
 
 **Arithmetic:** `+` `-` `*` `/` `%`
@@ -214,6 +251,19 @@ abort
 **Logical:** `and` `or` `not`
 
 **Range:** `..` (exclusive), `..=` (inclusive)
+
+String `+` concatenates strings. Numeric operations preserve runtime value
+types: assigning `7` to a variable declared `float` does not convert it, so
+`7 / 2` remains integer division and produces `3`. Mixed `int`/`float`
+arithmetic promotes to `float`, except mixed-type `%`, which reports an error.
+Bytes support equality but not arithmetic or ordering.
+
+Integers are signed 64-bit values. Addition, subtraction, multiplication, and
+negation wrap on overflow. Division and remainder by zero, and division or
+remainder of the minimum integer by `-1`, report runtime errors.
+
+`and` and `or` short-circuit. Range bounds are evaluated once, from left to
+right; an inclusive end of `9223372036854775807` reports an overflow error.
 
 ```astrn
 scan x > 0 and y > 0 { }

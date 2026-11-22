@@ -29,9 +29,23 @@ cargo install --path .
 ```sh
 astron <file.astrn>
 astron <file.astrn> --launch <name>
+astron build <file.astrn> --launch <name> -o <executable>
 astron --help
 astron --version
 ```
+
+The first two commands run the interpreter. `build` creates a standalone native
+executable and requires Clang and a working system linker on `PATH`.
+`--launch` defaults to `main` in both modes.
+
+```sh
+astron build exam/13_builtin_functions.astrn -o ./mission
+./mission
+```
+
+On Windows, use `-o mission.exe` and run `.\mission.exe`.
+See [Getting Started](./docs/getting-started.md#building-a-native-executable)
+for supported features, exit codes, and runtime requirements.
 
 ## Documentation
 
